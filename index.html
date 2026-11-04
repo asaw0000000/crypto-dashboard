@@ -321,6 +321,7 @@ td.liq{color:#ef4444;font-weight:700}
 .j-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.5rem;font-size:.72rem;color:var(--muted)}.j-grid label,.j-ta{display:grid;gap:.2rem;font-size:.72rem;color:var(--muted)}
 .j-ta textarea{resize:vertical;font-family:inherit}
 .mod.retired{display:none!important}
+.bt-box{margin-top:.8rem;border-color:var(--stroke)!important}.scen.bt td:first-child{color:var(--muted)}.scen.bt td,.scen.bt th{text-align:left}.bt-eq{width:100%;height:4rem;margin-top:.5rem;background:var(--input);border-radius:.5rem}
 .j-item.sim{border-left-color:#a855f7!important;background:color-mix(in srgb,#a855f7 9%,var(--row))}.badge.simb{background:#a855f733;color:#c084fc;border:1px solid #a855f766}
 #mod-fut .item .badge:first-child{border:1px solid #a855f755}
 /* ================= settings drawer ================= */
@@ -518,13 +519,13 @@ function loadSettings(){
   if((saved.ver||0)>=3&&(saved.ver||0)<6){const i=s.layout.findIndex(m=>m.id==='stats')+1;s.layout.splice(i,0,{id:'ai',size:'xl',show:true})}
   if((saved.ver||0)>=3&&(saved.ver||0)<7){const i=s.layout.findIndex(m=>m.id==='stats')+1;s.layout.splice(i,0,{id:'wallet',size:'xl',show:true})}
   if((saved.ver||0)<8)s.quote='USDT';
-  if((saved.ver||0)<9){const i=s.layout.findIndex(m=>m.id==='ai');if(i>=0)s.layout[i]={id:'assist',size:'xl',show:true};else{const j=s.layout.findIndex(m=>m.id==='wallet')+1;s.layout.splice(j,0,{id:'assist',size:'xl',show:true})}}
+  if((saved.ver||0)<9&&!s.layout.some(m=>m.id==='assist')){const i=s.layout.findIndex(m=>m.id==='ai');if(i>=0)s.layout[i]={id:'assist',size:'xl',show:true};else{const j=s.layout.findIndex(m=>m.id==='wallet')+1;s.layout.splice(j,0,{id:'assist',size:'xl',show:true})}}
   if((saved.ver||0)<10&&(saved.ver||0)>=3){const take=id=>{const i=s.layout.findIndex(m=>m.id===id);return i>=0?s.layout.splice(i,1)[0]:{id,size:'xl',show:true}};const f=take('fut'),n=take('notes');f.show=true;let i=s.layout.findIndex(m=>m.id==='assist')+1;if(!i)i=s.layout.length;s.layout.splice(i,0,f,n)}
   s.ver=10;s.risk=Object.assign(structuredClone(DEF.risk),saved.risk||{});s.life=Object.assign({},DEF.life,saved.life||{});
   s.ind=Object.assign({},DEF.ind,s.ind);
   const ids=s.layout.map(m=>m.id);
   for(const m of DEF.layout) if(!ids.includes(m.id)) s.layout.push({...m});
-  s.layout=s.layout.filter(m=>MODS[m.id]);
+  s.layout=s.layout.filter((m,i,a)=>MODS[m.id]&&a.findIndex(x=>x.id===m.id)===i);
   // migrate v1 settings
   const v1=store.get('settings',null); if(v1&&!store.get('settings2',null)){s.fee=v1.fee??s.fee;s.initial=v1.initial??s.initial}
   return s;
@@ -738,7 +739,10 @@ const TPL={
       <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
-      <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div></div>
+      <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
+        <div class="as-plan bt-box"><div class="as-h">📊 回測這套規則</div>
+          <div class="r" style="align-items:center"><select class="in" id="btDays" style="width:auto"><option value="30">過去 30 天</option><option value="60">過去 60 天</option><option value="90" selected>過去 90 天</option></select><button class="btn sm" id="btGo">▶ 開始回測</button></div>
+          <div class="note" id="btProg" style="margin:0">用你的餘額和「每筆最多虧 %」，比較目前規則和寬止損哪個比較好</div><div id="btOut"></div></div></div>
       <div>
         <div class="lh">🧾 我的 Bybit（手動對齊，30 秒填完）</div>
         <div class="as-form">
@@ -1972,7 +1976,7 @@ function asSize(c,entry,sl){
   if(bal&&margin>bal*0.9){const qm=Math.floor(bal*0.9*lev/entry/st.step)*st.step;note=`保證金不夠，最多 ${+qm.toFixed(6)} 顆`;q=Math.max(qm,0)}
   q=+q.toFixed(6);return{q,val:q*entry,margin:q*entry/lev,loss:q*dist,note};
 }
-function asPlan(A){
+function asPlan(A,wide){if(wide===undefined)wide=!!AS.wide;
   const {px,atr,m7,m14,ev,ob,res,sup,lastH,lastL,c}=A,P={};
   const clampSL=(e,s,dir)=>{let d=Math.abs(e-s);d=Math.max(d,0.6*atr);d=Math.min(d,3.5*atr);return e-dir*d};
   if(A.trend!==0&&ev&&A.ago<=48){
@@ -1984,6 +1988,8 @@ function asPlan(A){
     const deeper=lv.filter(x=>dir>0?x<entry-0.3*atr:x>entry+0.3*atr).sort((a,b)=>dir>0?b-a:a-b);
     let sl=deeper.length?deeper[0]-dir*0.2*atr:entry-dir*1.2*atr;
     sl=clampSL(entry,sl,dir);
+    if(wide){if(ob&&ob.dir===dir){const edge=dir>0?ob.lo-0.2*atr:ob.hi+0.2*atr;if((entry-edge)*dir>0&&Math.abs(entry-edge)<=3.5*atr&&(sl-edge)*dir>0)sl=edge}
+      if(Math.abs(entry-sl)<1.0*atr)sl=entry-dir*1.0*atr}
     let tp=dir>0?(res&&res>entry?res:entry+2*(entry-sl)):(sup&&sup<entry?sup:entry-2*(sl-entry));
     const rk=Math.abs(entry-sl);if(Math.abs(tp-entry)<1.2*rk){const t2=dir>0?A.res2:A.sup2;P.room=`最近的${dir>0?'壓力':'支撐'} ${asF(tp)} 太近（不到 1.2 倍止損距離）`;if(t2&&Math.abs(t2-entry)>=1.2*rk)tp=t2;else tp=entry+dir*1.5*rk}
     entry=asTick(c,entry);sl=asTick(c,sl);tp=asTick(c,tp);Object.assign(P,{entry,sl,tp,rr:Math.abs(tp-entry)/Math.abs(entry-sl)});
@@ -2060,6 +2066,70 @@ async function asFetch(c){
   let err;for(const s of AS_SRC){try{const B=s.p(await getJSON(s.u(c)));if(B.length<120)throw new Error('資料不足');AS_RT.src=s.n;return B}catch(e){err=e}}
   throw err;
 }
+/* ---------- 回測：用過去的 15 分 K 照助手規則逐根模擬（只用已收盤的 K 線，沒有偷看未來） ---------- */
+const BT={run:false,res:null};
+async function btFetch(c,days){
+  const need=days*96+320,q=15*60e3;let end=Date.now(),out=[];
+  const srcs=[
+    {n:'Bybit 合約',get:async e=>{const j=await getJSON(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=15&limit=1000&end=${e}`);if(j.retCode!==0)throw 0;return j.result.list.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4]})).reverse()}},
+    {n:'Binance 合約',get:async e=>(await getJSON(`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=15m&limit=1000&endTime=${e}`)).map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4]}))},
+    {n:'Binance 現貨',get:async e=>(await getJSON(`${BN}/klines?symbol=${c}USDT&interval=15m&limit=1000&endTime=${e}`)).map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4]}))}];
+  for(const s of srcs){try{out=[];end=Date.now();
+      while(out.length<need){const B=await s.get(end);if(!B.length)break;out=B.concat(out.filter(b=>b.t>B.at(-1).t));end=B[0].t-1;
+        $('btProg').textContent=`下載 ${s.n} K 線… ${Math.min(100,Math.round(out.length/need*100))}%`;if(B.length<200)break}
+      if(out.length>400){const m=new Map();for(const b of out)m.set(b.t,b);out=[...m.values()].sort((a,b)=>a.t-b.t).filter(b=>b.t+q<=Date.now());return{B:out.slice(-need),src:s.n}}}catch{}}
+  throw new Error('讀不到歷史 K 線');
+}
+function btSim(B,AA,wide,bal0,riskPct,maker,taker){
+  let eq=bal0,pos=null,ord=null,peak=bal0,mdd=0,fees=0;const T=[],curve=[];const st=asStep('BTC');
+  const open=(i,px,dir,sl,tp,fee)=>{const dist=Math.abs(px-sl)+px*(fee+taker);let q=Math.floor(eq*riskPct/100/dist/st.step+1e-9)*st.step;if(q<st.min)q=st.min;
+    const f=px*q*fee;eq-=f;fees+=f;pos={i,e:px,dir,sl,tp,q,R:Math.abs(px-sl),be:false,f}};
+  for(let i=0;i<B.length;i++){const b=B[i];
+    if(ord&&!pos){ // pending limit
+      if(i-ord.i>8||(ord.dir>0?b.c<ord.sl:b.c>ord.sl))ord=null;
+      else if(ord.dir>0?b.l<=ord.e:b.h>=ord.e){open(i,ord.e,ord.dir,ord.sl,ord.tp,maker);ord=null}}
+    if(pos&&i>pos.i||pos&&pos.i===i&&false){
+      const d=pos.dir,hitSL=d>0?b.l<=pos.sl:b.h>=pos.sl,hitTP=d>0?b.h>=pos.tp:b.l<=pos.tp;let x=null,why='';
+      if(hitSL){x=d>0?Math.min(pos.sl,b.o):Math.max(pos.sl,b.o);why=pos.be?'保本':'止損'}else if(hitTP){x=pos.tp;why='止盈'}
+      if(x!=null){const f=x*pos.q*taker,g=(x-pos.e)*d*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:b.t,dir:d,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q)});pos=null}
+      else if(!pos.be&&(d>0?b.h-pos.e:pos.e-b.l)>=pos.R){pos.sl=pos.e*(1+d*(maker+taker));pos.be=true}}
+    if(!pos&&!ord&&AA[i]){const P=asPlan(AA[i],wide);if(P.dir){
+      if(P.state.startsWith('在進場區')&&B[i+1])open(i+1,B[i+1].o,P.dir,P.sl,P.tp,taker);
+      else if(P.state.startsWith('等回踩'))ord={i,e:P.entry,dir:P.dir,sl:P.sl,tp:P.tp}}}
+    const v=eq+(pos?(b.c-pos.e)*pos.dir*pos.q:0);peak=Math.max(peak,v);mdd=Math.max(mdd,(peak-v)/peak);if(i%4===0)curve.push(v)}
+  const W=T.filter(t=>t.pnl>0),L=T.filter(t=>t.pnl<=0),sw=W.reduce((a,t)=>a+t.pnl,0),sl=L.reduce((a,t)=>a+t.pnl,0);
+  return{T,eq,ret:(eq-bal0)/bal0,n:T.length,win:T.length?W.length/T.length:0,pf:sl?Math.abs(sw/sl):null,avgR:T.length?T.reduce((a,t)=>a+t.r,0)/T.length:0,mdd,fees,curve};
+}
+async function btRun(){
+  if(BT.run)return;BT.run=true;$('btGo').disabled=true;const days=+$('btDays').value,c=AS.coin||'BTC',bal=+AS.bal>0?+AS.bal:100,rk=+AS.risk||3;
+  try{const {B,src}=await btFetch(c,days);const W=300,AA=new Array(B.length);
+    for(let i=W;i<B.length;i++){AA[i]=asAnalyze(B.slice(i-W,i+1),c);AA[i].px=B[i].c;
+      if(i%250===0){$('btProg').textContent=`分析 K 線… ${Math.round((i-W)/(B.length-W)*100)}%`;await new Promise(r=>setTimeout(r,0))}}
+    const Bs=B.slice(W),As=AA.slice(W),a=btSim(Bs,As,false,bal,rk,0.0002,0.00055),b=btSim(Bs,As,true,bal,rk,0.0002,0.00055),hold=(Bs.at(-1).c-Bs[0].o)/Bs[0].o;
+    BT.res={a,b,hold,days,src,from:Bs[0].t,to:Bs.at(-1).t,bal,rk,c};btRender()}
+  catch(e){$('btProg').innerHTML=`<span class="down">${e.message||e}</span>`}
+  BT.run=false;$('btGo').disabled=false;
+}
+function btSpark(cv,col,mn,mx){if(cv.length<2)return'';const r=mx-mn||1;return`<polyline fill="none" stroke="${col}" stroke-width="1.5" points="${cv.map((v,i)=>`${(i/(cv.length-1)*300).toFixed(1)},${(58-(v-mn)/r*56).toFixed(1)}`).join(' ')}"/>`}
+function btRender(){
+  const R=BT.res;if(!R)return;const d=t=>new Date(t).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'}),p=x=>`<b class="${cls(x)}">${x>=0?'+':''}${(x*100).toFixed(1)}%</b>`;
+  const row=(k,f)=>`<tr><td>${k}</td><td>${f(R.a)}</td><td>${f(R.b)}</td></tr>`;
+  const best=R.b.eq>R.a.eq?'寬止損':'目前規則',beatHold=Math.max(R.a.ret,R.b.ret)>R.hold;
+  $('btProg').textContent=`${R.c}・${R.src}・${d(R.from)}～${d(R.to)}（${R.days} 天）・起始 ${asF(R.bal,2)} USDT・每筆最多虧 ${R.rk}%`;
+  $('btOut').innerHTML=`<table class="scen bt"><thead><tr><th></th><th>目前規則</th><th>寬止損（≥1 ATR、OB 外）</th></tr></thead><tbody>
+    ${row('交易筆數',x=>x.n)}${row('勝率',x=>(x.win*100).toFixed(0)+'%')}${row('盈虧比（賺÷賠）',x=>x.pf?x.pf.toFixed(2):'-')}
+    ${row('平均每筆（R）',x=>`<b class="${cls(x.avgR)}">${x.avgR>=0?'+':''}${x.avgR.toFixed(2)} R</b>`)}${row('總報酬（扣手續費）',x=>p(x.ret))}
+    ${row('最大回撤',x=>`<b class="down">−${(x.mdd*100).toFixed(1)}%</b>`)}${row('手續費合計',x=>asF(x.fees,2))}
+    <tr><td>同期買了抱著</td><td colspan="2">${p(R.hold)}（現貨不開槓桿）</td></tr></tbody></table>
+    <svg viewBox="0 0 300 60" preserveAspectRatio="none" class="bt-eq">${(()=>{const all=R.a.curve.concat(R.b.curve),mn=Math.min(...all),mx=Math.max(...all),y=58-(R.bal-mn)/((mx-mn)||1)*56;return `<line x1="0" x2="300" y1="${y}" y2="${y}" stroke="currentColor" stroke-dasharray="3 3" opacity=".4"/>`+btSpark(R.a.curve,'#60a5fa',mn,mx)+btSpark(R.b.curve,'#22c55e',mn,mx)})()}</svg>
+    <div class="note" style="margin:.2rem 0 .6rem"><span style="color:#60a5fa">━ 目前規則</span>　<span style="color:#22c55e">━ 寬止損</span>　虛線＝起始資金</div>
+    <div class="as-n ${Math.max(R.a.ret,R.b.ret)>0?'go':'bad'}">${Math.max(R.a.ret,R.b.ret)>0?`這段期間「${best}」表現比較好`:'兩種規則這段期間都是虧的'}${beatHold?'，而且贏過買了抱著。':'，但沒有贏過單純買了抱著。'}樣本只有一段行情，換一段時間結果可能完全不同。</div>
+    <label class="as-sync"><input type="checkbox" id="btWide" ${AS.wide?'checked':''}> 看盤助手的即時計畫改用「寬止損」</label>
+    <details class="learn" style="margin-top:.5rem"><summary>最近 15 筆（${best}）</summary>${(R.b.eq>R.a.eq?R.b:R.a).T.slice(-15).reverse().map(t=>`<div>${new Date(t.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}・${t.dir>0?'多':'空'} ${asF(t.e)} → ${asF(t.x)}・${t.why}・<b class="${cls(t.pnl)}">${t.pnl>=0?'+':''}${asF(t.pnl,2)}</b>（${t.r>=0?'+':''}${t.r.toFixed(2)}R）</div>`).join('')||'沒有交易'}</details>
+    <details class="learn"><summary>回測怎麼算的</summary><div>每根 15 分 K 收盤後，只用「到這根為止」的 300 根 K 線跑一次助手分析（不偷看未來）。計畫是「在進場區」就下一根開盤市價進場；「等回踩」就掛限價 2 小時，收盤破止損就取消；「已跑遠」不追。同一根 K 同時碰到止損和止盈，一律當作先碰止損（保守）。賺到 1 倍止損距離就把止損移到保本。手續費：限價 0.02%、市價 0.055%。沒算資金費和滑價，實際會再差一點。</div></details>`;
+  $('btWide').onchange=e=>{AS.wide=e.target.checked;asSave();AS_RT.sig=null;asRun(true);toast(AS.wide?'看盤助手改用寬止損':'看盤助手改回原本的止損')};
+}
+
 async function asRun(manual){
   if(AS_RT.busy)return;AS_RT.busy=true;const c=AS.coin||'BTC';$('asState').textContent='分析中…';
   try{
@@ -2104,7 +2174,7 @@ function asFill(){
 }
 function asInit(){
   if(!$('asCard'))return;asFill();
-  $('asNow').onclick=()=>asRun(true);
+  $('asNow').onclick=()=>asRun(true);$('btGo').onclick=btRun;
   $('asCoin').onchange=e=>{AS.coin=e.target.value;asSave();AS_RT.sig=null;asRun(true)};
   $('asSave').onclick=()=>{
     AS.bal=+$('asBal').value||0;AS.risk=Math.min(10,Math.max(.5,+$('asRisk').value||3));AS.lev=+$('asLev').value||10;AS.side=$('asSide').value;
