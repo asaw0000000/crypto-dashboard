@@ -321,6 +321,7 @@ td.liq{color:#ef4444;font-weight:700}
 .j-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.5rem;font-size:.72rem;color:var(--muted)}.j-grid label,.j-ta{display:grid;gap:.2rem;font-size:.72rem;color:var(--muted)}
 .j-ta textarea{resize:vertical;font-family:inherit}
 .mod.retired{display:none!important}
+.as-n.trail{border:1px solid #f59e0b66;color:var(--text)}.as-n.trail span{color:var(--muted);font-size:.72rem}
 .bt-box{margin-top:.8rem;border-color:var(--stroke)!important}.scen.bt td:first-child{color:var(--muted)}.scen.bt td,.scen.bt th{text-align:left}.bt-eq{width:100%;height:4rem;margin-top:.5rem;background:var(--input);border-radius:.5rem}
 .j-item.sim{border-left-color:#a855f7!important;background:color-mix(in srgb,#a855f7 9%,var(--row))}.badge.simb{background:#a855f733;color:#c084fc;border:1px solid #a855f766}
 #mod-fut .item .badge:first-child{border:1px solid #a855f755}
@@ -766,6 +767,7 @@ const TPL={
           <div><b>FVG</b>：走太快留下的缺口，價格常回來補。</div>
           <div><b>回踩進場</b>：突破後不追，等價格回到突破的位置或 MA7 再進，止損比較小。</div>
           <div><b>保本</b>：賺到 1 倍止損距離，就把止損移到進場價；之後只往有利方向移。</div>
+          <div><b>追蹤出場</b>：Bybit 持倉的「追蹤出場」。啟動價＝進場價 ± 1 倍止損距離，回調距離＝約 1.5 倍 15 分 ATR。啟動後止損會自動跟著價格走，只進不退。</div>
           <div><b>紀律</b>：一天連虧 2 筆就停；不加碼攤平；不把止損往不利方向移。</div>
         </details>
         <div class="lh" style="margin-top:.8rem">訊號紀錄</div><div class="as-log" id="asLog"></div>
@@ -2025,6 +2027,8 @@ function asManage(A,P){
   const atSL=sl?(sl-e)*d*q-e*q*fRT:null,atTP=tp?(tp-e)*d*q-e*q*fRT:null;
   return{d,q,e,sl,tp,pnl,atSL,atTP,out,be};
 }
+const asTrail=(c,atr)=>Math.max(50,Math.round(1.5*atr/50)*50);
+const asTrailHTML=(c,e,d,R,atr)=>{const act=asTick(c,e+d*R),dist=asTrail(c,atr);return `<div class="as-n trail">🎯 <b>Bybit「追蹤出場」照抄：</b>啟動價 <b>${asF(act)}</b>・回調距離 <b>${asF(dist,0)}</b><br><span>價格${d>0?'漲':'跌'}到 ${asF(act)}（賺到 1 倍止損距離）才開始追蹤，之後從最${d>0?'高':'低'}點回落 ${asF(dist,0)} 就自動出場。原本的止損要保留。</span></div>`};
 function asCardHTML(A,P){
   const evTxt=A.ev?`${A.ev.dir>0?'🟢 向上':'🔴 向下'} <b>${A.ev.type}</b>：15 分 K 收盤${A.ev.dir>0?'站上':'跌破'} ${asF(A.ev.level)}（${A.ago} 根前，約 ${A.ago*15} 分鐘）`:'最近沒有結構突破';
   const maTxt=A.maOrder>0?'多頭排列（MA7 > MA14 > MA28）':A.maOrder<0?'空頭排列（MA7 < MA14 < MA28）':'糾結（方向不明）';
@@ -2035,6 +2039,7 @@ function asCardHTML(A,P){
       <div class="as-kv"><div><span>進場</span><b>${asF(P.entry)}</b></div><div><span>止損</span><b class="down">${asF(P.sl)}</b></div><div><span>止盈</span><b class="up">${asF(P.tp)}</b></div><div><span>風報比</span><b>1 : ${P.rr.toFixed(1)}</b></div></div>
       <div class="as-kv"><div><span>數量</span><b>${Z.q} ${A.c}</b></div><div><span>訂單價值</span><b>${asF(Z.val,0)}</b></div><div><span>保證金（${AS.lev}x）</span><b>${asF(Z.margin,1)}</b></div><div><span>止損虧／止盈賺</span><b><span class="down">−${asF(Z.loss,1)}</span> / <span class="up">+${asF(gain,1)}</span></b></div></div>
       ${Z.note?`<div class="as-n warn">${Z.note}</div>`:''}${P.room?`<div class="as-n warn">${P.room}，止盈改用 ${asF(P.tp)}</div>`:''}
+      ${asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
       <div class="as-n">❌ ${P.kill}</div>${P.flip?`<div class="as-n">🔄 ${P.flip}</div>`:''}
       <button class="btn sm" id="asToFut">⚡ 帶入「短線：合約」模擬（方向、倍率、訂單價值、止損止盈全部填好）</button></div>`}
   else plan=`<div class="as-plan"><div class="as-h">⏸ ${P.state}</div>
@@ -2051,11 +2056,11 @@ function asCardHTML(A,P){
       <div><span>15 分正常波動</span><b>約 ±${asF(A.atr,0)}（ATR）</b></div>
     </div>${plan}`;
 }
-function asPosHTML(M){
-  if(!M)return '';
+function asPosHTML(M,A){
+  if(!M)return '';const Rr=+AS.r0>0?+AS.r0:(M.sl&&(M.sl-M.e)*M.d<0?Math.abs(M.e-M.sl):1.5*A.atr);
   return `<div class="as-plan pos"><div class="as-h">🧭 你的 ${M.d>0?'多':'空'}單管理・${M.q} 顆 @ ${asF(M.e)}</div>
     <div class="as-kv"><div><span>現在</span><b class="${M.pnl>=0?'up':'down'}">${M.pnl>=0?'+':''}${asF(M.pnl,2)}</b></div><div><span>碰到止損</span><b class="down">${M.atSL==null?'沒設':asF(M.atSL,2)}</b></div><div><span>碰到止盈</span><b class="up">${M.atTP==null?'沒設':'+'+asF(M.atTP,2)}</b></div><div><span>保本價</span><b>${asF(M.be)}</b></div></div>
-    ${M.out.map(([k,t])=>`<div class="as-n ${k}">${t}</div>`).join('')}</div>`;
+    ${M.out.map(([k,t])=>`<div class="as-n ${k}">${t}</div>`).join('')}${asTrailHTML(A.c,M.e,M.d,Rr,A.atr)}</div>`;
 }
 const AS_SRC=[
   {n:'Bybit 合約',u:c=>`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=15&limit=300`,
@@ -2158,7 +2163,7 @@ function asSchedule(ms){
 }
 function asRender(){
   if(!$('asCard'))return;const R=AS_RT.res;
-  if(R){$('asCard').innerHTML=asCardHTML(R.A,R.P);$('asPos').innerHTML=asPosHTML(R.M);if($('asToFut'))$('asToFut').onclick=asToFut}
+  if(R){$('asCard').innerHTML=asCardHTML(R.A,R.P);$('asPos').innerHTML=asPosHTML(R.M,R.A);if($('asToFut'))$('asToFut').onclick=asToFut}
   $('asLog').innerHTML=AS_RT.log.length?AS_RT.log.map(l=>`<div class="as-li"><span>${new Date(l.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}</span><b>${l.c} ${asF(l.px)}・${l.bias}</b><i>${l.state}${l.e?`・進 ${asF(l.e)} 損 ${asF(l.sl)} 盈 ${asF(l.tp)}`:''}</i></div>`).join(''):'<div class="empty">訊號改變時會記在這裡</div>';
   asTickState();
 }
