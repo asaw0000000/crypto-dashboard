@@ -1902,7 +1902,11 @@ function jInit(){
   if(!$('jList'))return;
   $('jNew').onclick=()=>jForm({sim:J.view==='sim'});$('jCsv').onclick=jCsv;
   $('jView').onclick=e=>{const v=e.target.dataset.v;if(!v)return;J.view=v;store.set('jView',v);J.open=null;jRender()};
-  $('bkOut').onclick=bkExport;$('bkIn').onclick=()=>$('bkFile').click();$('bkFile').onchange=e=>{const f=e.target.files[0];if(f)arm($('bkIn'),'再按一次：覆蓋目前資料',()=>bkImport(f));e.target.value=''};
+  $('bkOut').onclick=bkExport;
+  $('bkIn').onclick=()=>{if(J.bk){const f=J.bk;J.bk=null;bkImport(f);return}$('bkFile').click()};
+  $('bkFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;J.bk=f;const b=$('bkIn');b.textContent='✅ 確認還原（會覆蓋目前資料）';b.classList.remove('ghost');
+    toast(`已選擇「${esc(f.name)}」<br><span style="color:var(--muted)">按「✅ 確認還原」才會覆蓋；10 秒內沒按就取消</span>`);
+    setTimeout(()=>{if(J.bk===f){J.bk=null;b.textContent='📂 還原';b.classList.add('ghost')}},10000)};
   $('jList').addEventListener('click',e=>{const ed=e.target.closest('[data-jedit]'),dl=e.target.closest('[data-jdel]');
     if(ed){e.stopPropagation();return jForm(JR.find(x=>String(x.id)===ed.dataset.jedit))}
     if(dl){e.stopPropagation();return arm(dl,'再按一次刪除',()=>{JR=JR.filter(x=>String(x.id)!==dl.dataset.jdel);jSave();jRender()})}
