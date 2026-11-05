@@ -775,7 +775,7 @@ const TPL={
       </div>
     </div>`,
   notes:()=>`<div class="mh"><div><h3>📒 交易筆記</h3><div class="sub">每一筆 Bybit 交易都記在這裡：進出場、止盈止損、盈虧、手續費和檢討・自動算勝率和盈虧比</div></div>
-      <div class="r"><button class="btn sm" id="jNew">＋ 新增一筆</button><button class="btn ghost sm" id="jCsv">匯出 CSV</button><button class="btn ghost sm" id="bkOut" title="把這個瀏覽器裡的全部資料存成一個檔案">💾 備份全部資料</button><button class="btn ghost sm" id="bkIn">📂 還原</button><input type="file" id="bkFile" accept=".json" hidden></div></div>
+      <div class="r"><button class="btn sm" id="jNew">＋ 新增一筆</button><button class="btn ghost sm" id="jCsv">匯出 CSV</button><button class="btn ghost sm" id="bkOut" title="把這個瀏覽器裡的全部資料存成一個檔案">💾 備份全部資料</button><button class="btn ghost sm" id="bkIn">📂 還原</button><button class="btn ghost sm" id="jImp" title="把交易紀錄檔加進筆記，不會覆蓋原本的資料">📥 匯入交易</button><input type="file" id="jImpFile" accept=".json" hidden><input type="file" id="bkFile" accept=".json" hidden></div></div>
     <div class="r" style="align-items:center;margin-bottom:.6rem;flex-wrap:wrap"><div class="seg" id="jView"><button data-v="real">💰 真實</button><button data-v="sim">🧪 模擬</button><button data-v="all">全部</button></div><span class="note" style="margin:0" id="jViewN"></span></div>
     <div class="j-stats" id="jStats"></div>
     <div id="jTags"></div>
@@ -1909,6 +1909,10 @@ function jInit(){
   if(!$('jList'))return;
   $('jNew').onclick=()=>jForm({sim:J.view==='sim'});$('jCsv').onclick=jCsv;
   $('jView').onclick=e=>{const v=e.target.dataset.v;if(!v)return;J.view=v;store.set('jView',v);J.open=null;jRender()};
+  $('jImp').onclick=()=>$('jImpFile').click();
+  $('jImpFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(rd.result),arr=Array.isArray(j)?j:j.trades;if(!Array.isArray(arr))throw 0;
+    let n=0,skip=0;for(const t of arr){if(!(t&&t.entry&&t.exit&&t.qty))continue;if(t.id!=null&&JR.some(x=>String(x.id)===String(t.id))){skip++;continue}JR.push(Object.assign({id:Date.now()+n},t));n++}
+    jSave();J.view='all';store.set('jView','all');jRender();toast(`📥 已加入 ${n} 筆交易${skip?`（${skip} 筆已存在，略過）`:''}`)}catch{toast('這不是交易紀錄檔')}};rd.readAsText(f)};
   $('bkOut').onclick=bkExport;
   $('bkIn').onclick=()=>{if(J.bk){const f=J.bk;J.bk=null;bkImport(f);return}$('bkFile').click()};
   $('bkFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;J.bk=f;const b=$('bkIn');b.textContent='✅ 確認還原（會覆蓋目前資料）';b.classList.remove('ghost');
