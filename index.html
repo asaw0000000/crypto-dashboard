@@ -743,7 +743,7 @@ const TPL={
       <div class="lh" style="margin-top:1rem">已結束</div><div class="list" id="gdHist"></div>
     </div></div>`,
   assist:()=>`<div class="mh"><div><h3>📡 看盤助手・自動分析</h3><div class="sub">用 K 線自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
-      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smart">方法：全自動（看情勢選方法和週期）</option><option value="auto">方法：自動（看大局選方法）</option><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option><option value="bracket">方法：雙向掛單（突破就跟）</option><option value="don">方法：通道突破（趨勢跟隨）</option><option value="ema">方法：均線趨勢（EMA20／50）</option><option value="rsi">方法：RSI 回歸（超跌買、超漲賣）</option></select><select class="in" id="asTf" style="width:auto" title="用幾分鐘的 K 線分析"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="display:none"><option value="smart">全自動</option></select><span class="pill" style="font-weight:600">🤖 全自動看盤</span><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="全自動有單、或價格碰到關鍵點位時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
@@ -2022,8 +2022,8 @@ function asNotify(A,P){
   const k=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',Math.round(P.sl)].join('|'),last=store.get('assistNotified',{k:'',t:0});
   if(last.k===k&&Date.now()-last.t<6*3600e3)return;store.set('assistNotified',{k,t:Date.now()});
   const side=P.dir>0?'做多':'做空',body=`${A.c} ${side}・${P.state}\n進場 ${asF(P.entry)}・止損 ${asF(P.sl)}・止盈 ${asF(P.tp)}・風報比 1:${(P.rr||0).toFixed(1)}`;
-  try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification('🐱 盯盤喵：精選有單了（'+side+'）',{body,tag:'assist',requireInteraction:true});n.onclick=()=>{window.focus();$('asCard')&&$('asCard').scrollIntoView({block:'start'});n.close()}}}catch(e){}
-  asBeep();toast(`🔔 <b>精選有單了：${side}</b><br>${body.replace('\n','<br>')}`);
+  try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification('🐱 盯盤喵：全自動有單了（'+side+'）',{body,tag:'assist',requireInteraction:true});n.onclick=()=>{window.focus();$('asCard')&&$('asCard').scrollIntoView({block:'start'});n.close()}}}catch(e){}
+  asBeep();toast(`🔔 <b>全自動有單了：${side}</b><br>${body.replace('\n','<br>')}`);
   clearInterval(AS_TT);const t0=document.title;let on=0;AS_TT=setInterval(()=>{document.title=(on^=1)?'🔔 有單！'+side:t0},1000);
   const stop=()=>{clearInterval(AS_TT);document.title=t0;window.removeEventListener('focus',stop)};window.addEventListener('focus',stop);if(document.hasFocus())setTimeout(stop,8000);
 }
@@ -2213,6 +2213,19 @@ function asPlanBracket(A){
     state:L.hit?'⚡ 價格已經站上做多觸發價：如果多單成交了，立刻取消空單':S.hit?'⚡ 價格已經跌破做空觸發價：如果空單成交了，立刻取消多單':`兩張條件單掛著等：往上過 ${asF(L.trig)} 做多、往下破 ${asF(S.trig)} 做空`});
   return P;
 }
+function asKeyLv(A){const L=[],F=typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c?FLOW:null;
+  if(F&&F.pd){const D=F.pd;L.push([D.hi,'前一天最高'],[D.lo,'前一天最低'],[D.vah,'前一天價值區上緣'],[D.val,'前一天價值區下緣'],[D.poc,'前一天 POC']);if(D.open)L.push([D.open,'今日開盤'])}
+  if(A.range)L.push([A.range.top,'區間上緣'],[A.range.bottom,'區間下緣']);if(A.res)L.push([A.res,'壓力']);if(A.sup)L.push([A.sup,'支撐']);
+  if(F&&F.wB&&F.wB[0])L.push([F.wB[0].p,'最大買單牆']);if(F&&F.wA&&F.wA[0])L.push([F.wA[0].p,'最大賣單牆']);
+  const px=A.px,up=L.filter(x=>x[0]>px).sort((a,b)=>a[0]-b[0]),dn=L.filter(x=>x[0]<=px).sort((a,b)=>b[0]-a[0]);return{L,up:up[0],dn:dn[0]}}
+function asLvAlert(A){if(!AS.notify)return;const K=asKeyLv(A),px=A.px,tol=0.2*A.atr;
+  for(const [v,n] of K.L){if(Math.abs(px-v)>tol)continue;const k=A.c+'|'+n+'|'+Math.round(v),seen=store.get('lvNotified',{});if(seen[k]&&Date.now()-seen[k]<2*3600e3)continue;
+    for(const x in seen)if(Date.now()-seen[x]>864e5)delete seen[x];seen[k]=Date.now();store.set('lvNotified',seen);
+    const fromAbove=A._prev!=null?A._prev>v:px>v,F=typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c?FLOW:null,fl=F?`訂單流${F.bias>0?'偏多':F.bias<0?'偏空':'中性'}`:'';
+    const tip=fromAbove?`從上面跌到這裡：站得住（15 分 K 收在上面、長下影線）可以看多；收盤跌破就不要接`:`從下面漲到這裡：壓得住（收在下面、長上影線）可以看空；收盤站上就不要空`;
+    const body=`${A.c} 碰到 ${n} ${asF(v)}（現價 ${asF(px)}）・${tip}${fl?'・'+fl:''}`;
+    try{if(typeof Notification!=='undefined'&&Notification.permission==='granted')new Notification('📍 盯盤喵：碰到關鍵點位',{body,tag:'lv'})}catch(e){}
+    asBeep();toast('📍 <b>碰到關鍵點位</b><br>'+body);break}}
 function asPlanSmart(A){
   const H=A.h4,big=A.big?A.big.dir:0,bt=big>0?'偏多':big<0?'偏空':'沒方向',open=asUSOpen(),mins=open?(open-Date.now())/6e4:1e9,tag=(P,sit,why)=>Object.assign(P,{smart:{sit,why}});
   if(H){for(const k of ['don','ema','rsi']){const Q=asPlanSys(H,k,'4 小時');if(Q.dir)return tag(Q,`4 小時出現${{don:'通道突破',ema:'均線交叉',rsi:'超跌／超漲'}[k]}訊號`,`大週期的訊號優先：今天回測一年，4 小時的${{don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[k]}最接近打平，雜訊比 15 分少很多`)}}
@@ -2224,7 +2237,11 @@ function asPlanSmart(A){
   if(open)W.push(`美股開盤前 1 小時（${new Date(open).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}）如果還在區間，會改給雙向掛單`);
   return tag(Object.assign({},Q,{dir:0,bias:'全自動・等待',state:Q.dir?`有${Q.dir>0?'做多':'做空'}訊號，但逆著大局（4 小時${bt}），不做`:'現在沒有符合條件的單',note:'正在盯：'+W.join('；')}),'沒有明確情勢','不符合條件就不做，等下面任何一個發生');
 }
-function asPlanLive(A){const m=AS.method;let P=m==='smart'?asPlanSmart(A):m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
+function asPlanSmartF(A){const P=asPlanSmart(A),F=typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&Date.now()-FLOW.at<6e5?FLOW:null,K=asKeyLv(A);
+  const lv=`${K.up?`上方 <b>${asF(K.up[0])}</b>（${K.up[1]}）`:''}${K.up&&K.dn?'、':''}${K.dn?`下方 <b>${asF(K.dn[0])}</b>（${K.dn[1]}）`:''}`;
+  if(P.dir&&F&&F.score*P.dir<=-1.5&&!P.bracket)return Object.assign({},P,{dir:0,bias:'全自動・等待',state:`本來有${P.dir>0?'做多':'做空'}單，但訂單流${F.bias<0?'偏空':'偏多'}（${F.score.toFixed(1)}）方向相反，先不做`,note:'正在盯：訂單流轉中性、或價格碰到關鍵點位'+(lv?'：'+lv:''),smart:{sit:P.smart.sit+'・訂單流反對',why:'計畫和訂單流打架時，全自動選擇不進場'}});
+  if(lv)P.note=(P.note?P.note+'；':'')+'最近的關鍵點位：'+lv+'（碰到會跳提醒）';return P}
+function asPlanLive(A){const m=AS.method;let P=m==='smart'?asPlanSmartF(A):m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
   return P}
 function asManage(A,P){
   if(!AS.side||!(+AS.qty>0)||!(+AS.entry>0))return null;
@@ -2438,7 +2455,7 @@ async function asRun(manual){
     if(AS.method==='smart'){try{const B4=await asFetch(c,240),c4=B4.filter(b=>b.ct<Date.now());const H=asAnalyze(c4.slice(-300),c);H._B=c4;H.px=live.c;H.c=c;A.h4=H}catch(e){A.h4=null}}
     const P=asPlanLive(A),M=asManage(A,P);AS_RT.res={A,P,M,at:Date.now()};AS_RT.err=null;
     const sig=[P.dir,A.ev?A.ev.i+'|'+A.ev.t:'',P.state].join('|'),sigKey=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',P.state].join('|');
-    asNotify(A,P);asBrAlert(A,P);if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
+    asNotify(A,P);asBrAlert(A,P);try{asLvAlert(A)}catch(e){}A._prev=A.px;if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
   }catch(e){AS_RT.err='讀不到資料（'+(e.message||'網路')+'），1 分鐘後重試'}
   AS_RT.busy=false;asRender();asSchedule(AS_RT.err?60e3:null);
 }
@@ -2472,7 +2489,7 @@ function asToFut(){
 }
 function asFill(){
   $('asCoin').value=AS.coin;$('asBal').value=AS.bal||'';$('asRisk').value=AS.risk;$('asLev').value=AS.lev;$('asSide').value=AS.side;
-  $('asQty').value=AS.qty||'';$('asEntry').value=AS.entry||'';$('asSL').value=AS.sl||'';$('asTP').value=AS.tp||'';$('asSync').checked=!!AS.sync;$('asMethod').value=AS.method||'smc';if($('asTf'))$('asTf').value=String(asTf());$('asMaker').checked=!!AS.maker;
+  $('asQty').value=AS.qty||'';$('asEntry').value=AS.entry||'';$('asSL').value=AS.sl||'';$('asTP').value=AS.tp||'';$('asSync').checked=!!AS.sync;AS.method='smart';$('asMethod').value='smart';if($('asTf'))$('asTf').value=String(asTf());$('asMaker').checked=!!AS.maker;
 }
 /* ======================================================================
    訂單流：前一天價值區、CVD 背離、OI、多空比、資金費率、盤口
@@ -2536,7 +2553,7 @@ function usInit(){if(!$('usTick'))return;const th=themeNow()==='dark'?'dark':'li
   tvW('usTick',B+'embed-widget-tickers.js',{symbols:[{proName:'FOREXCOM:NSXUSD',title:'納斯達克 100'},{proName:'FOREXCOM:SPXUSD',title:'標普 500'},{proName:'NASDAQ:NVDA',title:'Nvidia'},{proName:'TVC:US10Y',title:'美債 10 年殖利率'},{proName:'TVC:DXY',title:'美元指數'},{proName:'BYBIT:BTCUSDT.P',title:'BTC 合約'}],isTransparent:true,showSymbolLogo:true,colorTheme:th,locale:'zh_TW'});
   tvW('usNews',B+'embed-widget-timeline.js',{feedMode:'all_symbols',isTransparent:true,displayMode:'regular',width:'100%',height:440,colorTheme:th,locale:'zh_TW'});
   tvW('usCal',B+'embed-widget-events.js',{colorTheme:th,isTransparent:true,width:'100%',height:440,locale:'zh_TW',importanceFilter:'0,1',countryFilter:'us'})}
-function asInit(){
+function asInit(){AS.method='smart';
   if(!$('asCard'))return;asFill();
   $('asNow').onclick=()=>asRun(true);asBellLabel();
   const wake=()=>{if(AS.notify&&!AS_AC){try{AS_AC=new (window.AudioContext||window.webkitAudioContext)();AS_AC.resume()}catch(e){}}};window.addEventListener('pointerdown',wake,{once:true});window.addEventListener('keydown',wake,{once:true});
@@ -2546,7 +2563,7 @@ function asInit(){
       asBeep();toast(Notification&&Notification.permission==='granted'?'🔔 已開啟：精選出現可以做的單會跳通知＋響一聲。<br><span style="color:var(--muted)">這個分頁要開著、電腦不能睡眠</span>':'🔔 已開啟聲音提醒。瀏覽器通知被擋住了，可以到網址列左邊的鎖頭把「通知」改成允許')}
     asSave();asBellLabel()};$('asMethod').onchange=e=>{AS.method=e.target.value;asSave();AS_RT.sig=null;asRun(true)};$('btGo').onclick=btRun;
   $('asCoin').onchange=e=>{AS.coin=e.target.value;asSave();AS_RT.sig=null;asRun(true)};
-  $('asTf').onchange=e=>{AS.tf=+e.target.value;asSave();AS_RT.sig=null;asRun(true);toast(`看盤助手改用 ${asTfN()} K 分析`)};
+  if($('asTf'))$('asTf').onchange=e=>{AS.tf=+e.target.value;asSave();AS_RT.sig=null;asRun(true);toast(`看盤助手改用 ${asTfN()} K 分析`)};
   $('asSave').onclick=()=>{
     AS.bal=+$('asBal').value||0;AS.risk=Math.min(10,Math.max(.5,+$('asRisk').value||3));AS.lev=+$('asLev').value||10;AS.side=$('asSide').value;
     AS.qty=+$('asQty').value||0;AS.entry=+$('asEntry').value||0;AS.sl=+$('asSL').value||0;AS.tp=+$('asTP').value||0;AS.sync=$('asSync').checked;
