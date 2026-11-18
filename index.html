@@ -2248,7 +2248,6 @@ function asPlanSmart(A){
   if(A.range&&A.ev&&A.ago<=8&&big&&A.ev.dir===big&&typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&Date.now()-FLOW.at<6e5&&FLOW.bias===big){const d=big,R=A.range,lv=A.ev.level;
     const Q=asPlanRetest(A,d,lv,d>0?R.top-0.1*R.h:R.bottom+0.1*R.h,d>0?'三方一致・回踩做多':'三方一致・回踩做空',`${asTfN()} K ${d>0?'向上':'向下'} ${A.ev.type}（${asF(lv)}）＋訂單流${d>0?'偏多':'偏空'}（${FLOW.score.toFixed(1)}）＋4 小時${bt}，三個方向一致，等價格回到剛${d>0?'突破':'跌破'}的 ${asF(lv)} 再${d>0?'做多':'做空'}，目標區間${d>0?'上':'下'}緣`,`${asTfN()} K 收盤${d>0?'跌破':'站上'}止損 → 認賠`);
     if(Q)return tag(Q,`區間裡出現三方一致的${d>0?'偏多':'偏空'}訊號`,'結構、訂單流和大局同方向時，不用等到區間邊緣，回踩就可以做')}
-  if(A.range&&mins>0&&mins<=60){const Q=asPlanBracket(A);return tag(Q,`區間盤整＋美股 ${Math.round(mins)} 分鐘後開盤`,'開盤常常會選方向，區間上下各掛一張條件單，突破哪邊就跟哪邊')}
   if(A.range){const Q=asPlanRange(A);if(Q.dir&&big&&Q.dir!==big)Q.warn=`這張逆著大局（4 小時${bt}），數量建議減半`;
     return tag(Q,`15 分 K 區間盤整（${asF(A.range.bottom)}～${asF(A.range.top)}）`,'沒有大週期訊號、也不在開盤前，區間裡用「上緣空、下緣多」')}
   const Q=asPlan(A,!!AS.wide,true);if(Q.dir&&(!big||Q.dir===big))return tag(Q,`15 分 K 有趨勢，大局${bt}`,'順著大局方向，用精選結構找回踩進場');
@@ -2260,7 +2259,8 @@ function asPlanSmartF(A){const P=asPlanSmart(A),F=typeof FLOW!=='undefined'&&FLO
   const lv=`${K.up?`上方 <b>${asF(K.up[0])}</b>（${K.up[1]}）`:''}${K.up&&K.dn?'、':''}${K.dn?`下方 <b>${asF(K.dn[0])}</b>（${K.dn[1]}）`:''}`;
   if(P.dir&&F&&F.score*P.dir<=-1.5&&!P.bracket)return Object.assign({},P,{dir:0,bias:'全自動・等待',state:`本來有${P.dir>0?'做多':'做空'}單，但訂單流${F.bias<0?'偏空':'偏多'}（${F.score.toFixed(1)}）方向相反，先不做`,note:'正在盯：訂單流轉中性、或價格碰到關鍵點位'+(lv?'：'+lv:''),smart:{sit:P.smart.sit+'・訂單流反對',why:'計畫和訂單流打架時，全自動選擇不進場'}});
   if(lv)P.note=(P.note?P.note+'；':'')+'最近的關鍵點位：'+lv+'（碰到會跳提醒）';return P}
-function asPlanLive(A){let P=asPlanLive0(A);if(P.dir&&P.entry&&P.sl&&P.tp&&!P.tpRef){const n=asNetRR(P.entry,P.sl,P.tp);if(n<1.5)P=Object.assign({},P,{dir:0,bias:'全自動・等待',state:`本來有${P.dir>0?'做多':'做空'}單，但扣掉手續費後風報比只有 1:${n.toFixed(1)}（要 ≥ 1:1.5），不划算，不做`,note:(P.note?P.note+'；':'')+`原本的計畫：進場 ${asF(P.entry)}・止損 ${asF(P.sl)}・止盈 ${asF(P.tp)}`})}return P}
+function asPlanLive(A){let P=asPlanLive0(A);const nx=asUSOpen(),pv=asUSOpen(Date.now()-20*6e4),near=(nx&&nx-Date.now()<=15*6e4)||(pv&&Date.now()-pv<=15*6e4&&Date.now()>=pv);
+  if(near&&(P.dir||P.bracket))return Object.assign({},P,{dir:0,bracket:null,bias:'全自動・等待',state:'美股開盤前後 15 分鐘：不下新單、不掛條件單（開盤常常先假突破、插針掃止損）',note:'開盤 15 分鐘後再看'});if(P.dir&&P.entry&&P.sl&&P.tp&&!P.tpRef){const n=asNetRR(P.entry,P.sl,P.tp);if(n<1.5)P=Object.assign({},P,{dir:0,bias:'全自動・等待',state:`本來有${P.dir>0?'做多':'做空'}單，但扣掉手續費後風報比只有 1:${n.toFixed(1)}（要 ≥ 1:1.5），不划算，不做`,note:(P.note?P.note+'；':'')+`原本的計畫：進場 ${asF(P.entry)}・止損 ${asF(P.sl)}・止盈 ${asF(P.tp)}`})}return P}
 function asPlanLive0(A){const m=AS.method;let P=m==='smart'?asPlanSmartF(A):m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
   return P}
 function asManage(A,P){
