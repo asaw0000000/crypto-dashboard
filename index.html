@@ -2216,7 +2216,7 @@ function asPlanBracket(A){
 function asKeyLv(A){const L=[],F=typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c?FLOW:null;
   if(F&&F.pd){const D=F.pd;L.push([D.hi,'前一天最高'],[D.lo,'前一天最低'],[D.vah,'前一天價值區上緣'],[D.val,'前一天價值區下緣'],[D.poc,'前一天 POC']);if(D.open)L.push([D.open,'今日開盤'])}
   if(A.range)L.push([A.range.top,'區間上緣'],[A.range.bottom,'區間下緣']);if(A.res)L.push([A.res,'壓力']);if(A.sup)L.push([A.sup,'支撐']);
-  if(F&&F.wB&&F.wB[0])L.push([F.wB[0].p,'最大買單牆']);if(F&&F.wA&&F.wA[0])L.push([F.wA[0].p,'最大賣單牆']);
+  if(F&&F.wB)for(const w of F.wB)if(A.px-w.p>=0.5*A.atr){L.push([w.p,'大買單牆']);break}if(F&&F.wA)for(const w of F.wA)if(w.p-A.px>=0.5*A.atr){L.push([w.p,'大賣單牆']);break}
   const px=A.px,up=L.filter(x=>x[0]>px).sort((a,b)=>a[0]-b[0]),dn=L.filter(x=>x[0]<=px).sort((a,b)=>b[0]-a[0]);return{L,up:up[0],dn:dn[0]}}
 function asLvAlert(A){if(!AS.notify)return;const K=asKeyLv(A),px=A.px,tol=0.2*A.atr;
   for(const [v,n] of K.L){if(Math.abs(px-v)>tol)continue;const k=A.c+'|'+n+'|'+Math.round(v),seen=store.get('lvNotified',{});if(seen[k]&&Date.now()-seen[k]<2*3600e3)continue;
@@ -2226,9 +2226,21 @@ function asLvAlert(A){if(!AS.notify)return;const K=asKeyLv(A),px=A.px,tol=0.2*A.
     const body=`${A.c} 碰到 ${n} ${asF(v)}（現價 ${asF(px)}）・${tip}${fl?'・'+fl:''}`;
     try{if(typeof Notification!=='undefined'&&Notification.permission==='granted')new Notification('📍 盯盤喵：碰到關鍵點位',{body,tag:'lv'})}catch(e){}
     asBeep();toast('📍 <b>碰到關鍵點位</b><br>'+body);break}}
+function asPlanRetest(A,d,lv,tp,bias,why,kill){const c=A.c,atr=A.atr,px=A.px,entry=asTick(c,lv),sl=asTick(c,lv-d*Math.max(1.2*atr,lv*0.003)),T=asTick(c,tp),rr=Math.abs(T-entry)/Math.abs(entry-sl);
+  if((T-entry)*d<=0||rr<1.5||Math.abs(px-entry)>3*atr)return null;
+  const at=Math.abs(px-entry)<=0.3*atr;
+  return {dir:d,bias,entry,sl,tp:T,rr,key:'rt'+d+Math.round(lv),state:at?'價格已經回到進場價附近：可以進場':`掛限價單在 ${asF(entry)}，等價格回踩（現在 ${asF(px)}，不要追）`,rangeTxt:why,kill,flip:null,limit:!at}}
 function asPlanSmart(A){
   const H=A.h4,big=A.big?A.big.dir:0,bt=big>0?'偏多':big<0?'偏空':'沒方向',open=asUSOpen(),mins=open?(open-Date.now())/6e4:1e9,tag=(P,sit,why)=>Object.assign(P,{smart:{sit,why}});
   if(H){for(const k of ['don','ema','rsi']){const Q=asPlanSys(H,k,'4 小時');if(Q.dir)return tag(Q,`4 小時出現${{don:'通道突破',ema:'均線交叉',rsi:'超跌／超漲'}[k]}訊號`,`大週期的訊號優先：今天回測一年，4 小時的${{don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[k]}最接近打平，雜訊比 15 分少很多`)}}
+  if(A.range){const R=A.range,b=A.bar.c,d=b>R.top+0.1*A.atr?1:b<R.bottom-0.1*A.atr?-1:0;
+    if(d){const lv=d>0?R.top:R.bottom,Q=asPlanRetest(A,d,lv,lv+d*Math.max(R.h*0.6,2.5*A.atr),d>0?'突破區間・回踩做多':'跌破區間・回踩做空',`區間 ${asF(R.bottom)}～${asF(R.top)} 被${d>0?'往上突破':'往下跌破'}，等價格回到 ${asF(lv)}（原本的${d>0?'上':'下'}緣，現在變${d>0?'支撐':'壓力'}）再${d>0?'做多':'做空'}`,`${asTfN()} K 收盤又回到區間裡（${d>0?'跌破':'站上'} ${asF(lv-d*1.2*A.atr)}）→ 假突破，認賠`);
+      const sit=`區間被${d>0?'往上突破':'往下跌破'}（收盤 ${asF(b)}）`;
+      if(Q){if(big&&big!==d)Q.warn=`突破方向和 4 小時大局（${bt}）相反，數量建議減半`;return tag(Q,sit,'突破後不逆著做，改成順著突破方向，等回踩原本的邊緣再進場')}
+      return tag({dir:0,bias:'全自動・等待',state:`${sit}，但離回踩點太遠或風報比不夠，不追`,note:`等價格回到 ${asF(lv)} 附近再看`},sit,'突破後不追，等回踩')}}
+  if(A.range&&A.ev&&A.ago<=8&&big&&A.ev.dir===big&&typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&Date.now()-FLOW.at<6e5&&FLOW.bias===big){const d=big,R=A.range,lv=A.ev.level;
+    const Q=asPlanRetest(A,d,lv,d>0?R.top-0.1*R.h:R.bottom+0.1*R.h,d>0?'三方一致・回踩做多':'三方一致・回踩做空',`${asTfN()} K ${d>0?'向上':'向下'} ${A.ev.type}（${asF(lv)}）＋訂單流${d>0?'偏多':'偏空'}（${FLOW.score.toFixed(1)}）＋4 小時${bt}，三個方向一致，等價格回到剛${d>0?'突破':'跌破'}的 ${asF(lv)} 再${d>0?'做多':'做空'}，目標區間${d>0?'上':'下'}緣`,`${asTfN()} K 收盤${d>0?'跌破':'站上'}止損 → 認賠`);
+    if(Q)return tag(Q,`區間裡出現三方一致的${d>0?'偏多':'偏空'}訊號`,'結構、訂單流和大局同方向時，不用等到區間邊緣，回踩就可以做')}
   if(A.range&&mins>0&&mins<=60){const Q=asPlanBracket(A);return tag(Q,`區間盤整＋美股 ${Math.round(mins)} 分鐘後開盤`,'開盤常常會選方向，區間上下各掛一張條件單，突破哪邊就跟哪邊')}
   if(A.range){const Q=asPlanRange(A);if(Q.dir&&big&&Q.dir!==big)Q.warn=`這張逆著大局（4 小時${bt}），數量建議減半`;
     return tag(Q,`15 分 K 區間盤整（${asF(A.range.bottom)}～${asF(A.range.top)}）`,'沒有大週期訊號、也不在開盤前，區間裡用「上緣空、下緣多」')}
