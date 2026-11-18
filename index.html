@@ -2191,7 +2191,7 @@ function btSim(B,AA,v,bal0,riskPct,maker,taker,cap=2,tpM=false){
       else if(ord.dir>0?b.l<=ord.e:b.h>=ord.e){open(i,ord.e,ord.dir,ord.sl,ord.tp,maker);ord=null}}
     if(pos&&i>pos.i){const d=pos.dir,hitSL=d>0?b.l<=pos.sl:b.h>=pos.sl,hitTP=d>0?b.h>=pos.tp:b.l<=pos.tp;let x=null,why='';
       if(hitSL){x=d>0?Math.min(pos.sl,b.o):Math.max(pos.sl,b.o);why=pos.be?'保本':'止損'}else if(hitTP){x=pos.tp;why='止盈'}
-      if(x!=null){const f=x*pos.q*(why==='止盈'&&tpM?maker:taker),g=(x-pos.e)*d*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:b.t,dir:d,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q)});pos=null;if(eq<bal0*0.05)dead=true}
+      if(x!=null){const f=x*pos.q*(why==='止盈'&&tpM?maker:taker),g=(x-pos.e)*d*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:b.t,dir:d,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q),fr:(f+pos.f)/(pos.R*pos.q)});pos=null;if(eq<bal0*0.05)dead=true}
       else if(!pos.be&&(d>0?b.h-pos.e:pos.e-b.l)>=pos.R){pos.sl=pos.e*(1+d*(maker+taker));pos.be=true}}
     if(!dead&&!pos&&!ord&&AA[i]){const P=v.fn(AA[i]),capOK=dk(b.t)!==day||dayN<cap;
       if(P.dir&&capOK&&P.key!==lastKey){
@@ -2215,7 +2215,7 @@ function btInd(B){
 function btSys(B,I,kind,from,to,bal0,riskPct,maker,taker,cap=2){
   let eq=bal0,pos=null,pend=null,exitNext=false,peak=bal0,mdd=0,fees=0,day='',dayN=0,dead=false;const T=[],curve=[],st=asStep('BTC');
   const dk=t=>new Date(t+8*36e5).toISOString().slice(0,10);
-  const close=(i,x,why)=>{const f=x*pos.q*taker,g=(x-pos.e)*pos.dir*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:B[i].t,dir:pos.dir,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q)});pos=null;if(eq<bal0*0.05)dead=true};
+  const close=(i,x,why)=>{const f=x*pos.q*taker,g=(x-pos.e)*pos.dir*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:B[i].t,dir:pos.dir,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q),fr:(f+pos.f)/(pos.R*pos.q)});pos=null;if(eq<bal0*0.05)dead=true};
   for(let i=from;i<to;i++){const b=B[i];
     if(pos&&exitNext){close(i,b.o,'出場訊號');exitNext=false}
     if(!pos&&pend&&!dead){const px=b.o,R=Math.abs(px-pend.stop);if(R>0&&(pend.dir>0?pend.stop<px:pend.stop>px)){let q=Math.floor(eq*riskPct/100/(R+px*taker*2)/st.step+1e-9)*st.step;if(q<st.min)q=st.min;const f=px*q*taker;eq-=f;fees+=f;pos={i,e:px,dir:pend.dir,stop:pend.stop,q,R,f,ext:px};const d=dk(b.t);if(d!==day){day=d;dayN=0}dayN++}pend=null}
@@ -2235,6 +2235,19 @@ function btSys(B,I,kind,from,to,bal0,riskPct,maker,taker,cap=2){
   const W=T.filter(t=>t.pnl>0),L=T.filter(t=>t.pnl<=0),sw=W.reduce((a,t)=>a+t.pnl,0),sl=L.reduce((a,t)=>a+t.pnl,0);
   return{T,eq,ret:Math.max(-1,(eq-bal0)/bal0),n:T.length,win:T.length?W.length/T.length:0,pf:sl?Math.abs(sw/sl):null,avgR:T.length?T.reduce((a,t)=>a+t.r,0)/T.length:0,mdd:Math.min(1,mdd),fees,curve,dead};
 }
+/* ---------- 跟著情勢換方法：每 7 天看過去 30 天哪個方法最好，接下來 7 天就用它（只用當時看得到的資料） ---------- */
+function btMeta(runs,from,to,bal0,riskPct,look=30*864e5,step=7*864e5){
+  let eq=bal0,peak=bal0,mdd=0,fees=0;const T=[],curve=[bal0],weeks=[];
+  for(let w=from;w<to;w+=step){
+    const sc=runs.map(r=>({r,s:r.all.T.filter(t=>t.t2<w&&t.t2>=w-look).reduce((a,t)=>a+t.r,0),n:r.all.T.filter(t=>t.t2<w&&t.t2>=w-look).length}));
+    const ok=sc.filter(x=>x.n>=2).sort((a,b)=>b.s-a.s),best=ok[0]&&ok[0].s>0?ok[0]:null;
+    weeks.push({w,n:best?best.r.v.n:'空手（過去 30 天全部虧）',s:best?best.s:0});
+    if(!best)continue;
+    for(const t of best.r.all.T.filter(t=>t.t>=w&&t.t<Math.min(w+step,to))){const risk=eq*riskPct/100,g=t.r*risk;eq+=g;fees+=(t.fr||0)*risk;
+      T.push({...t,pnl:g,m:best.r.v.n});peak=Math.max(peak,eq);mdd=Math.max(mdd,(peak-eq)/peak);curve.push(eq);if(eq<bal0*0.05)break}}
+  const W=T.filter(t=>t.pnl>0),L=T.filter(t=>t.pnl<=0),sw=W.reduce((a,t)=>a+t.pnl,0),sl=L.reduce((a,t)=>a+t.pnl,0);
+  return{T,eq,ret:Math.max(-1,(eq-bal0)/bal0),n:T.length,win:T.length?W.length/T.length:0,pf:sl?Math.abs(sw/sl):null,avgR:T.length?T.reduce((a,t)=>a+t.r,0)/T.length:0,mdd:Math.min(1,mdd),fees,curve,dead:eq<bal0*0.05,weeks};
+}
 async function btRun(){
   if(BT.run)return;BT.run=true;$('btGo').disabled=true;const days=+$('btDays').value,tf=+$('btTf').value||15,cap=+$('btCap').value||2,tpM=$('btTPm').checked,c=AS.coin||'BTC',bal=+AS.bal>0?+AS.bal:100,rk=+AS.risk||3;
   try{const {B,src}=await btFetch(c,days,tf);const W=300,AA=new Array(B.length);
@@ -2243,6 +2256,8 @@ async function btRun(){
     const Bs=B.slice(W),As=AA.slice(W),k=Math.floor(Bs.length*2/3),F=[0.0002,0.00055];
     const G=[...F,cap,tpM],runs=BT_V.map(v=>({v,all:btSim(Bs,As,v,bal,rk,...G),a:btSim(Bs.slice(0,k),As.slice(0,k),v,bal,rk,...G),b:btSim(Bs.slice(k),As.slice(k),v,bal,rk,...G)}));
     const I=btInd(B);for(const v of BT_S)runs.push({v,all:btSys(B,I,v.k,W,B.length,bal,rk,...F,cap),a:btSys(B,I,v.k,W,W+k,bal,rk,...F,cap),b:btSys(B,I,v.k,W+k,B.length,bal,rk,...F,cap)});
+    const t0=Bs[0].t+30*864e5,tm=Bs[k].t,tE=Bs.at(-1).t+1,base=runs.slice();
+    runs.push({v:{n:'跟著情勢換方法',col:'#a3e635'},all:btMeta(base,t0,tE,bal,rk),a:btMeta(base,t0,tm,bal,rk),b:btMeta(base,tm,tE,bal,rk)});
     const hold=(Bs.at(-1).c-Bs[0].o)/Bs[0].o;
     BT.res={runs,hold,days,tf,cap,tpM,src,from:Bs[0].t,to:Bs.at(-1).t,mid:Bs[k].t,bal,rk,c};btRender()}
   catch(e){$('btProg').innerHTML=`<span class="down">${e.message||e}</span>`}
@@ -2267,7 +2282,8 @@ function btRender(){
     <label class="as-sync"><input type="checkbox" id="btStrict" ${AS.strict!==false?'checked':''}> 看盤助手用「精選模式」（只給新訊號、均線同向、風報比 ≥ 1:2、一天最多 2 筆）</label>
     <label class="as-sync"><input type="checkbox" id="btWide" ${AS.wide?'checked':''}> 看盤助手用「寬止損」（至少 1 ATR、放在 Order Block 外）</label>
     <details class="learn" style="margin-top:.5rem"><summary>最近 15 筆（${best.v.n}）</summary>${best.all.T.slice(-15).reverse().map(t=>`<div>${new Date(t.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}・${t.dir>0?'多':'空'} ${asF(t.e)} → ${asF(t.x)}・${t.why}・<b class="${cls(t.pnl)}">${t.pnl>=0?'+':''}${asF(t.pnl,2)}</b>（${t.r>=0?'+':''}${t.r.toFixed(2)}R）</div>`).join('')||'沒有交易'}</details>
-    <details class="learn"><summary>回測怎麼算的</summary><div>每根 15 分 K 收盤後，只用「到這根為止」的 300 根 K 線跑一次助手分析（不偷看未來）。「在進場區」就下一根開盤市價進場；「等回踩」就掛限價 2 小時，收盤破止損就取消；「已跑遠」不追。同一根 K 同時碰到止損和止盈，一律當作先碰止損。賺到 1 倍止損距離就移到保本。精選結構要求：訊號 1 小時內、均線同向、風報比 ≥ 1:2。掃流動性：刺破前低／前高後 15 分 K 收回來就進場，目標是至少 2 倍止損距離的最近高低點。所有方法都是同一個訊號只做一次、一天最多 ${R.cap} 筆。前段／後段是把期間切成 2/3 和 1/3 分開跑，兩段都賺才比較可信。手續費：限價 0.02%、市價 0.055%，沒算資金費和滑價。帳戶剩不到 5% 就停止（💥）。<br><br><b>系統化策略</b>（後三欄，不用看盤助手的訊號）：K 線收盤出訊號，下一根開盤市價進場，全部用吃單手續費。<b>通道突破</b>：收盤突破前 20 根最高點做多（跌破最低點做空），止損 2 ATR，之後用前 10 根最低（最高）點當移動止損。<b>均線趨勢</b>：EMA20 上穿 EMA50 做多（下穿做空），止損 3 ATR，從最有利的收盤價回落 3 ATR 或均線反向就出場。<b>RSI 回歸</b>：價格在 200 均線上、RSI(2) 低於 10 做多（反之做空），收盤回到 5 均線上方就出場，止損 2.5 ATR。前兩個是趨勢跟隨：勝率低，但賺的單可以一直跑。</div></details>`;
+    ${(()=>{const M=R.runs.find(r=>r.all.weeks);if(!M)return'';const ws=M.all.weeks,cnt={};ws.forEach(x=>cnt[x.n]=(cnt[x.n]||0)+1);return `<details class="learn"><summary>跟著情勢換方法：每週選了什麼（共 ${ws.length} 週）</summary><div>${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`${n}：${c} 週`).join('・')}</div>${ws.slice(-12).reverse().map(x=>`<div>${new Date(x.w).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})} 起 → <b>${x.n}</b>${x.s?`（過去 30 天 ${x.s>=0?'+':''}${x.s.toFixed(1)} R）`:''}</div>`).join('')}</details>`})()}
+    <details class="learn"><summary>回測怎麼算的</summary><div>每根 15 分 K 收盤後，只用「到這根為止」的 300 根 K 線跑一次助手分析（不偷看未來）。「在進場區」就下一根開盤市價進場；「等回踩」就掛限價 2 小時，收盤破止損就取消；「已跑遠」不追。同一根 K 同時碰到止損和止盈，一律當作先碰止損。賺到 1 倍止損距離就移到保本。精選結構要求：訊號 1 小時內、均線同向、風報比 ≥ 1:2。掃流動性：刺破前低／前高後 15 分 K 收回來就進場，目標是至少 2 倍止損距離的最近高低點。所有方法都是同一個訊號只做一次、一天最多 ${R.cap} 筆。前段／後段是把期間切成 2/3 和 1/3 分開跑，兩段都賺才比較可信。手續費：限價 0.02%、市價 0.055%，沒算資金費和滑價。帳戶剩不到 5% 就停止（💥）。<br><br><b>系統化策略</b>（後三欄，不用看盤助手的訊號）：K 線收盤出訊號，下一根開盤市價進場，全部用吃單手續費。<b>通道突破</b>：收盤突破前 20 根最高點做多（跌破最低點做空），止損 2 ATR，之後用前 10 根最低（最高）點當移動止損。<b>均線趨勢</b>：EMA20 上穿 EMA50 做多（下穿做空），止損 3 ATR，從最有利的收盤價回落 3 ATR 或均線反向就出場。<b>RSI 回歸</b>：價格在 200 均線上、RSI(2) 低於 10 做多（反之做空），收盤回到 5 均線上方就出場，止損 2.5 ATR。前兩個是趨勢跟隨：勝率低，但賺的單可以一直跑。<br><br><b>跟著情勢換方法</b>（最後一欄）：從第 31 天開始，每 7 天看一次「過去 30 天」每個方法加起來賺幾 R（至少要有 2 筆），選最好的那個用在接下來 7 天；如果全部都是虧的，那 7 天就空手。只用當時已經發生的交易做決定，不偷看未來。損益用 R 換算成你的資金（每筆最多虧 3%）。</div></details>`;
   $('btStrict').onchange=e=>{AS.strict=e.target.checked;asSave();AS_RT.sig=null;asRun(true);toast(AS.strict?'看盤助手改用精選模式':'看盤助手改回原始規則')};
   $('btWide').onchange=e=>{AS.wide=e.target.checked;asSave();AS_RT.sig=null;asRun(true);toast(AS.wide?'看盤助手改用寬止損':'看盤助手改回原本的止損')};
 }
