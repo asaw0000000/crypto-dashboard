@@ -737,7 +737,7 @@ const TPL={
       <div class="lh" style="margin-top:1rem">已結束</div><div class="list" id="gdHist"></div>
     </div></div>`,
   assist:()=>`<div class="mh"><div><h3>📡 看盤助手・自動分析</h3><div class="sub">用 K 線自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
-      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="auto">方法：自動（看大局選方法）</option><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option><option value="bracket">方法：雙向掛單（突破就跟）</option><option value="don">方法：通道突破（趨勢跟隨）</option><option value="ema">方法：均線趨勢（EMA20／50）</option><option value="rsi">方法：RSI 回歸（超跌買、超漲賣）</option></select><select class="in" id="asTf" style="width:auto" title="用幾分鐘的 K 線分析"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smart">方法：全自動（看情勢選方法和週期）</option><option value="auto">方法：自動（看大局選方法）</option><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option><option value="bracket">方法：雙向掛單（突破就跟）</option><option value="don">方法：通道突破（趨勢跟隨）</option><option value="ema">方法：均線趨勢（EMA20／50）</option><option value="rsi">方法：RSI 回歸（超跌買、超漲賣）</option></select><select class="in" id="asTf" style="width:auto" title="用幾分鐘的 K 線分析"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
@@ -2101,8 +2101,8 @@ function asPlanAuto(A){
     note:big?`大局${bt}：只等${big>0?'做多':'做空'}的機會。`:null});
   return P;
 }
-function asPlanSys(A,kind){
-  const B=A._B,c=A.c,P={},n=B?B.length:0,name={don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[kind],tN=asTfN();
+function asPlanSys(A,kind,tN=asTfN()){
+  const B=A._B,c=A.c,P={},n=B?B.length:0,name={don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[kind];
   if(n<230)return Object.assign(P,{dir:0,bias:name+'・資料不足',state:'K 線資料不夠，等一下再試',up:null,dn:null});
   const I=btInd(B),i=n-1,b=B[i],a=I.atr[i],px=A.px,last=(k,f)=>{let v=f==='h'?-Infinity:Infinity;for(let j=n-k;j<n;j++)v=f==='h'?Math.max(v,B[j].h):Math.min(v,B[j].l);return v};
   const nH=last(20,'h'),nL=last(20,'l'),t10H=last(10,'h'),t10L=last(10,'l');
@@ -2138,7 +2138,18 @@ function asPlanBracket(A){
     state:L.hit?'⚡ 價格已經站上做多觸發價：如果多單成交了，立刻取消空單':S.hit?'⚡ 價格已經跌破做空觸發價：如果空單成交了，立刻取消多單':`兩張條件單掛著等：往上過 ${asF(L.trig)} 做多、往下破 ${asF(S.trig)} 做空`});
   return P;
 }
-function asPlanLive(A){const m=AS.method;let P=m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
+function asPlanSmart(A){
+  const H=A.h4,big=A.big?A.big.dir:0,bt=big>0?'偏多':big<0?'偏空':'沒方向',open=asUSOpen(),mins=open?(open-Date.now())/6e4:1e9,tag=(P,sit,why)=>Object.assign(P,{smart:{sit,why}});
+  if(H){for(const k of ['don','ema','rsi']){const Q=asPlanSys(H,k,'4 小時');if(Q.dir)return tag(Q,`4 小時出現${{don:'通道突破',ema:'均線交叉',rsi:'超跌／超漲'}[k]}訊號`,`大週期的訊號優先：今天回測一年，4 小時的${{don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[k]}最接近打平，雜訊比 15 分少很多`)}}
+  if(A.range&&mins>0&&mins<=60){const Q=asPlanBracket(A);return tag(Q,`區間盤整＋美股 ${Math.round(mins)} 分鐘後開盤`,'開盤常常會選方向，區間上下各掛一張條件單，突破哪邊就跟哪邊')}
+  if(A.range){const Q=asPlanRange(A);if(Q.dir&&big&&Q.dir!==big)Q.warn=`這張逆著大局（4 小時${bt}），數量建議減半`;
+    return tag(Q,`15 分 K 區間盤整（${asF(A.range.bottom)}～${asF(A.range.top)}）`,'沒有大週期訊號、也不在開盤前，區間裡用「上緣空、下緣多」')}
+  const Q=asPlan(A,!!AS.wide,true);if(Q.dir&&(!big||Q.dir===big))return tag(Q,`15 分 K 有趨勢，大局${bt}`,'順著大局方向，用精選結構找回踩進場');
+  const W=[];if(H){const I=btInd(H._B),n=H._B.length;let hi=-Infinity,lo=Infinity;for(let j=n-20;j<n;j++){hi=Math.max(hi,H._B[j].h);lo=Math.min(lo,H._B[j].l)}W.push(`4 小時收盤站上 <b>${asF(hi)}</b> 或跌破 <b>${asF(lo)}</b>（通道突破）`)}
+  if(open)W.push(`美股開盤前 1 小時（${new Date(open).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}）如果還在區間，會改給雙向掛單`);
+  return tag(Object.assign({},Q,{dir:0,bias:'全自動・等待',state:Q.dir?`有${Q.dir>0?'做多':'做空'}訊號，但逆著大局（4 小時${bt}），不做`:'現在沒有符合條件的單',note:'正在盯：'+W.join('；')}),'沒有明確情勢','不符合條件就不做，等下面任何一個發生');
+}
+function asPlanLive(A){const m=AS.method;let P=m==='smart'?asPlanSmart(A):m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
   return P}
 function asManage(A,P){
   if(!AS.side||!(+AS.qty>0)||!(+AS.entry>0))return null;
@@ -2185,6 +2196,7 @@ function asCardHTML(A,P){
   else plan=`<div class="as-plan"><div class="as-h">⏸ ${P.state}</div>
       <div class="as-kv"><div><span>上方關鍵價</span><b>${asF(P.up)}</b></div><div><span>下方關鍵價</span><b>${asF(P.dn)}</b></div></div>
       <div class="as-n">${P.note||`${asTfN()} K 收盤站上 ${asF(P.up)} → 等回踩做多；收盤跌破 ${asF(P.dn)} → 等反彈做空。中間不做。`}</div></div>`;
+  if(P.smart)plan=`<div class="as-n go" style="margin:.5rem 0">🧠 <b>情勢：</b>${P.smart.sit}<br><span>→ ${P.smart.why}</span></div>`+plan;
   return `<div class="as-top"><div class="as-px">${A.c} <b>${asF(A.px)}</b></div><div class="as-bias ${P.dir>0?'up':P.dir<0?'down':''}">${P.bias}</div></div>
     <div class="as-rows">
       <div><span>結構</span><b>${A.struct}</b></div>
@@ -2204,17 +2216,18 @@ function asPosHTML(M,A){
     <div class="as-kv"><div><span>現在</span><b class="${M.pnl>=0?'up':'down'}">${M.pnl>=0?'+':''}${asF(M.pnl,2)}</b></div><div><span>碰到止損</span><b class="down">${M.atSL==null?'沒設':asF(M.atSL,2)}</b></div><div><span>碰到止盈</span><b class="up">${M.atTP==null?'沒設':'+'+asF(M.atTP,2)}</b></div><div><span>保本價</span><b>${asF(M.be)}</b></div></div>
     ${M.out.map(([k,t])=>`<div class="as-n ${k}">${t}</div>`).join('')}${asTrailHTML(A.c,M.e,M.d,Rr,A.atr)}</div>`;
 }
-const asTf=()=>+AS.tf||15,asTfB=()=>asTf()===15?'15m':asTf()===60?'1h':'4h',asTfN=()=>asTf()===15?'15 分':asTf()===60?'1 小時':'4 小時';
+const asTf=()=>AS.method==='smart'?15:(+AS.tf||15),asTfB=()=>asTf()===15?'15m':asTf()===60?'1h':'4h',asTfN=()=>asTf()===15?'15 分':asTf()===60?'1 小時':'4 小時';
 const AS_SRC=[
-  {n:'Bybit 合約',u:c=>`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=${asTf()}&limit=1000`,
-   p:j=>{if(j.retCode!==0)throw new Error('bybit '+j.retMsg);return j.result.list.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:+r[0]+asTf()*60e3-1})).reverse()}},
-  {n:'Binance 合約（跟 Bybit 差不到 10 塊）',u:c=>`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=${asTfB()}&limit=1000`,
+  {n:'Bybit 合約',u:(c,tf)=>`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=${tf}&limit=1000`,
+   p:(j,tf)=>{if(j.retCode!==0)throw new Error('bybit '+j.retMsg);return j.result.list.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:+r[0]+tf*60e3-1})).reverse()}},
+  {n:'Binance 合約（跟 Bybit 差不到 10 塊）',u:(c,tf)=>`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=${tfB(tf)}&limit=1000`,
    p:k=>k.map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:r[6]}))},
-  {n:'Binance 現貨（跟 Bybit 合約可能差幾十塊）',u:c=>`${BN}/klines?symbol=${c}USDT&interval=${asTfB()}&limit=1000`,
+  {n:'Binance 現貨（跟 Bybit 合約可能差幾十塊）',u:(c,tf)=>`${BN}/klines?symbol=${c}USDT&interval=${tfB(tf)}&limit=1000`,
    p:k=>k.map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:r[6]}))},
 ];
-async function asFetch(c){
-  let err;for(const s of AS_SRC){try{const B=s.p(await getJSON(s.u(c)));if(B.length<120)throw new Error('資料不足');AS_RT.src=s.n;return B}catch(e){err=e}}
+const tfB=tf=>tf===15?'15m':tf===60?'1h':'4h';
+async function asFetch(c,tf=asTf()){
+  let err;for(const s of AS_SRC){try{const B=s.p(await getJSON(s.u(c,tf)),tf);if(B.length<120)throw new Error('資料不足');AS_RT.src=s.n;return B}catch(e){err=e}}
   throw err;
 }
 /* ---------- 回測：用過去的 15 分 K 照助手規則逐根模擬（只用已收盤的 K 線，沒有偷看未來） ---------- */
@@ -2346,6 +2359,7 @@ async function asRun(manual){
   try{
     const B=await asFetch(c);const live=B.at(-1);
     const closed=B.filter(b=>b.ct<Date.now());const A=asAnalyze(closed.slice(-300),c);A.big=asBig(closed);A._B=closed;A.px=live.c;
+    if(AS.method==='smart'){try{const B4=await asFetch(c,240),c4=B4.filter(b=>b.ct<Date.now());const H=asAnalyze(c4.slice(-300),c);H._B=c4;H.px=live.c;H.c=c;A.h4=H}catch(e){A.h4=null}}
     const P=asPlanLive(A),M=asManage(A,P);AS_RT.res={A,P,M,at:Date.now()};AS_RT.err=null;
     const sig=[P.dir,A.ev?A.ev.i+'|'+A.ev.t:'',P.state].join('|'),sigKey=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',P.state].join('|');
     asNotify(A,P);asBrAlert(A,P);if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
