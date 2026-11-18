@@ -2188,7 +2188,7 @@ async function asRun(manual){
 }
 function asSchedule(ms){
   clearTimeout(AS_RT.timer);const q=15*60e3,now=Date.now();
-  AS_RT.next=ms?now+ms:Math.floor(now/q)*q+q+8e3;AS_RT.timer=setTimeout(()=>asRun(),AS_RT.next-now);
+  const nq=Math.floor(now/q)*q+q+8e3,nm=Math.floor(now/60e3)*60e3+63e3;AS_RT.next=ms?now+ms:Math.min(nq,nm);AS_RT.timer=setTimeout(()=>asRun(),AS_RT.next-now);
 }
 function asRender(){
   if(!$('asCard'))return;const R=AS_RT.res;
@@ -2198,7 +2198,7 @@ function asRender(){
 }
 function asTickState(){
   if(!$('asState'))return;const R=AS_RT.res,left=Math.max(0,AS_RT.next-Date.now()),m=Math.floor(left/60e3),s=Math.floor(left/1e3)%60;
-  $('asState').innerHTML=AS_RT.err?`<span class="down">${AS_RT.err}</span>`:R?`資料來源：<b>${AS_RT.src||'-'}</b>・上次分析 ${new Date(R.at).toLocaleTimeString('zh-TW',{hour12:false})}・下次 ${new Date(AS_RT.next).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}（${m}:${String(s).padStart(2,'0')}）・這個分頁要開著才會自動更新`:'分析中…';
+  $('asState').innerHTML=AS_RT.err?`<span class="down">${AS_RT.err}</span>`:R?`資料來源：<b>${AS_RT.src||'-'}</b>・上次分析 ${new Date(R.at).toLocaleTimeString('zh-TW',{hour12:false})}・下次 ${new Date(AS_RT.next).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}（${m}:${String(s).padStart(2,'0')}）・價格每分鐘更新，訊號以 15 分 K 收盤為準・這個分頁要開著才會自動更新`:'分析中…';
 }
 function asToFut(){
   const R=AS_RT.res;if(!R||!R.P.dir)return toast('現在沒有計畫可以帶入');if(!S.rate)return toast('還沒拿到匯率');
