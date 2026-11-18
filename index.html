@@ -2226,10 +2226,16 @@ function asLvAlert(A){if(!AS.notify)return;const K=asKeyLv(A),px=A.px,tol=0.2*A.
     const body=`${A.c} 碰到 ${n} ${asF(v)}（現價 ${asF(px)}）・${tip}${fl?'・'+fl:''}`;
     try{if(typeof Notification!=='undefined'&&Notification.permission==='granted')new Notification('📍 盯盤喵：碰到關鍵點位',{body,tag:'lv'})}catch(e){}
     asBeep();toast('📍 <b>碰到關鍵點位</b><br>'+body);break}}
-function asPlanRetest(A,d,lv,tp,bias,why,kill){const c=A.c,atr=A.atr,px=A.px,entry=asTick(c,lv),sl=asTick(c,lv-d*Math.max(1.2*atr,lv*0.003)),T=asTick(c,tp),rr=Math.abs(T-entry)/Math.abs(entry-sl);
+function asObstacles(A,d,from,to){const O=[],F=typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c?FLOW:null,add=(v,n)=>{if(v&&(v-from)*d>0&&(to-v)*d>0)O.push([v,n])};
+  if(d<0){add(A.sup,'支撐');add(A.sup2,'支撐');if(A.fUp)add(A.fUp.hi,'缺口 FVG 上緣')}else{add(A.res,'壓力');add(A.res2,'壓力');if(A.fDn)add(A.fDn.lo,'缺口 FVG 下緣')}
+  if(F&&F.pd){const D=F.pd;add(D.poc,'前一天 POC');add(D.vah,'前一天價值區上緣');add(D.val,'前一天價值區下緣');add(D.hi,'前一天最高');add(D.lo,'前一天最低')}
+  return O.sort((x,y)=>(x[0]-y[0])*d)}
+function asPlanRetest(A,d,lv,tp,bias,why,kill){const c=A.c,atr=A.atr,px=A.px,entry=asTick(c,lv),sl=asTick(c,lv-d*Math.max(1.2*atr,lv*0.003)),risk=Math.abs(entry-sl);
+  let T=asTick(c,tp),tp2=null,tpWhy='';for(const [v,n] of asObstacles(A,d,entry,tp)){const t=v-d*0.1*atr;if((t-entry)*d>=2*risk){if(Math.abs(t-T)>0.3*atr){tp2=T;T=asTick(c,t);tpWhy=`止盈放在第一個${n} ${asF(v)} 前面（價格常在這裡先停住）`}break}}
+  const rr=Math.abs(T-entry)/risk;
   if((T-entry)*d<=0||rr<1.5||Math.abs(px-entry)>3*atr)return null;
   const at=Math.abs(px-entry)<=0.3*atr;
-  return {dir:d,bias,entry,sl,tp:T,rr,key:'rt'+d+Math.round(lv),state:at?'價格已經回到進場價附近：可以進場':`掛限價單在 ${asF(entry)}，等價格回踩（現在 ${asF(px)}，不要追）`,rangeTxt:why,kill,flip:null,limit:!at}}
+  return {dir:d,bias,entry,sl,tp:T,rr,key:'rt'+d+Math.round(lv),state:at?'價格已經回到進場價附近：可以進場':`掛限價單在 ${asF(entry)}，等價格回踩（現在 ${asF(px)}，不要追）`,rangeTxt:why+(tpWhy?`。${tpWhy}；想抱更遠，到了止盈前改用追蹤出場，第二目標 ${asF(tp2)}`:''),kill,flip:null,limit:!at}}
 function asPlanSmart(A){
   const H=A.h4,big=A.big?A.big.dir:0,bt=big>0?'偏多':big<0?'偏空':'沒方向',open=asUSOpen(),mins=open?(open-Date.now())/6e4:1e9,tag=(P,sit,why)=>Object.assign(P,{smart:{sit,why}});
   if(H){for(const k of ['don','ema','rsi']){const Q=asPlanSys(H,k,'4 小時');if(Q.dir)return tag(Q,`4 小時出現${{don:'通道突破',ema:'均線交叉',rsi:'超跌／超漲'}[k]}訊號`,`大週期的訊號優先：今天回測一年，4 小時的${{don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[k]}最接近打平，雜訊比 15 分少很多`)}}
