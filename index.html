@@ -736,8 +736,8 @@ const TPL={
       <div class="lh">運行中的網格</div><div class="list" id="gdBots"></div>
       <div class="lh" style="margin-top:1rem">已結束</div><div class="list" id="gdHist"></div>
     </div></div>`,
-  assist:()=>`<div class="mh"><div><h3>📡 看盤助手・每 15 分鐘自動分析</h3><div class="sub">用 15 分 K 自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
-      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="auto">方法：自動（看大局選方法）</option><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
+  assist:()=>`<div class="mh"><div><h3>📡 看盤助手・自動分析</h3><div class="sub">用 K 線自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="auto">方法：自動（看大局選方法）</option><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option><option value="bracket">方法：雙向掛單（突破就跟）</option><option value="don">方法：通道突破（趨勢跟隨）</option><option value="ema">方法：均線趨勢（EMA20／50）</option><option value="rsi">方法：RSI 回歸（超跌買、超漲賣）</option></select><select class="in" id="asTf" style="width:auto" title="用幾分鐘的 K 線分析"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
@@ -1936,6 +1936,12 @@ const AS_RT={res:null,next:0,timer:null,err:null,busy:false,log:store.get('assis
 let AS_AC=null,AS_TT=null;
 function asBeep(){try{if(!AS_AC)return;const t=AS_AC.currentTime;[0,.25,.5].forEach((d,i)=>{const o=AS_AC.createOscillator(),g=AS_AC.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(AS_AC.destination);g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.25,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.2);o.start(t+d);o.stop(t+d+.22)})}catch(e){}}
 function asBellLabel(){const b=$('asBell');if(!b)return;const den=typeof Notification!=='undefined'&&Notification.permission==='denied';b.textContent=AS.notify?(den?'🔔 進場提醒：開（只有聲音）':'🔔 進場提醒：開'):'🔕 進場提醒：關';b.classList.toggle('ghost',!AS.notify)}
+function asAlert(title,body,k){
+  const last=store.get('assistNotified',{k:'',t:0});if(last.k===k&&Date.now()-last.t<6*3600e3)return;store.set('assistNotified',{k,t:Date.now()});
+  try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification(title,{body,tag:'assist',requireInteraction:true});n.onclick=()=>{window.focus();n.close()}}}catch(e){}
+  asBeep();toast(`🔔 <b>${title}</b><br>${body.replace(/\n/g,'<br>')}`)}
+function asBrAlert(A,P){if(!AS.notify||!P.bracket)return;const K=P.bracket;
+  for(const x of [K.L,K.S])if(x.hit)asAlert(`🐱 雙向掛單：${x.dir>0?'做多':'做空'}觸發了`,`${A.c} ${asF(A.px)} ${x.dir>0?'站上':'跌破'} ${asF(x.trig)}\n如果${x.dir>0?'多':'空'}單成交了，立刻取消${x.dir>0?'空':'多'}單！止損 ${asF(x.sl)}・止盈 ${asF(x.tp)}`,'br'+x.dir+Math.round(x.trig))}
 function asNotify(A,P){
   if(!AS.notify||!P.dir||P.skip)return;
   const k=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',Math.round(P.sl)].join('|'),last=store.get('assistNotified',{k:'',t:0});
@@ -2031,8 +2037,8 @@ function asPlan(A,wide,strict){if(wide===undefined)wide=!!AS.wide;if(strict===un
     entry=asTick(c,entry);sl=asTick(c,sl);tp=asTick(c,tp);Object.assign(P,{entry,sl,tp,rr:Math.abs(tp-entry)/Math.abs(entry-sl)});
     const gap=(px-entry)*dir;
     P.state=gap>1.5*atr?'已跑遠：不追，等回踩':gap>0.25*atr?'等回踩：掛限價單在進場價':gap>=-0.4*atr?'在進場區：可以進場（市價或限價）':'跌回突破位下面：先觀望，收盤跌破止損位就放棄';
-    P.kill=`15 分 K 收盤${dir>0?'跌破':'站上'} ${asF(sl)} → 這個方向失敗`;
-    P.flip=dir>0?(lastL?`15 分 K 收盤跌破 ${asF(lastL.p)}（前低）→ 改看空`:null):(lastH?`15 分 K 收盤站上 ${asF(lastH.p)}（前高）→ 改看多`:null);
+    P.kill=`${asTfN()} K 收盤${dir>0?'跌破':'站上'} ${asF(sl)} → 這個方向失敗`;
+    P.flip=dir>0?(lastL?`${asTfN()} K 收盤跌破 ${asF(lastL.p)}（前低）→ 改看空`:null):(lastH?`${asTfN()} K 收盤站上 ${asF(lastH.p)}（前高）→ 改看多`:null);
     P.key=dir+'|'+Math.round(ev.level);
     if(strict){const why=A.ago>4?`${ev.type} 訊號已經過了 ${A.ago*15} 分鐘，不做舊訊號`:A.maOrder!==dir?`均線還沒排成${dir>0?'多':'空'}頭（MA7、MA14、MA28 方向不一致）`:P.rr<2?`風報比只有 1 : ${P.rr.toFixed(1)}，不到 1 : 2`:null;
       if(why){const b=P.bias;Object.assign(P,{dir:0,bias:b+'・精選不做',skip:why,up:lastH?asTick(c,lastH.p):null,dn:lastL?asTick(c,lastL.p):null,state:'精選模式不做：'+why})}}
@@ -2052,8 +2058,8 @@ function asPlanSweep(A){
   if(!cand.length)return none(`剛掃完${dir>0?'前低':'前高'} ${asF(S.level)}，但最近的${dir>0?'高點':'低點'}不到 2 倍止損距離，不做`);
   const tp=cand[0];
   Object.assign(P,{dir,bias:dir>0?'掃低後偏多':'掃高後偏空',entry:asTick(c,entry),sl:asTick(c,sl),tp:asTick(c,tp),rr:Math.abs(tp-entry)/R,key:'sw'+dir+Math.round(S.level),
-    state:'在進場區：可以進場（市價或限價）',sweepTxt:`${dir>0?'跌破前低':'漲破前高'} ${asF(S.level)}（最${dir>0?'低':'高'} ${asF(S.ext)}）後，15 分 K 收盤收回來 → ${dir>0?'空方':'多方'}的止損被掃掉了`,
-    kill:`15 分 K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（掃出來的${dir>0?'低':'高'}點）→ 這個方向失敗`,flip:null});
+    state:'在進場區：可以進場（市價或限價）',sweepTxt:`${dir>0?'跌破前低':'漲破前高'} ${asF(S.level)}（最${dir>0?'低':'高'} ${asF(S.ext)}）後，${asTfN()} K 收盤收回來 → ${dir>0?'空方':'多方'}的止損被掃掉了`,
+    kill:`${asTfN()} K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（掃出來的${dir>0?'低':'高'}點）→ 這個方向失敗`,flip:null});
   return P;
 }
 function asPlanRange(A){
@@ -2072,8 +2078,8 @@ function asPlanRange(A){
   const buf=Math.max(0.5*atr,0.1*h),sl=dir>0?bottom-buf:top+buf,tp=dir>0?top-0.1*h:bottom+0.1*h,entry=px,rr=Math.abs(tp-entry)/Math.abs(entry-sl),need=AS.strict!==false?2:1.5;
   if(rr<need)return none(`區間${dir>0?'下':'上'}緣出現${dir>0?'止跌':'止漲'} K，但風報比只有 1:${rr.toFixed(1)}（要 ≥ 1:${need}），不做`,note);
   Object.assign(P,{dir,bias:dir>0?'區間下緣・偏多':'區間上緣・偏空',entry:asTick(c,entry),sl:asTick(c,sl),tp:asTick(c,tp),rr,key:'rg'+dir+Math.round(dir>0?bottom:top),
-    state:'在進場區：可以進場（市價或限價）',rangeTxt:`區間 ${asF(bottom)}～${asF(top)}（約 ${R.W/4} 小時，上緣碰 ${R.tT} 次、下緣碰 ${R.tB} 次），價格到${dir>0?'下':'上'}緣、15 分 K 出現${dir>0?'止跌':'止漲'} K`,
-    kill:`15 分 K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（區間被${dir>0?'往下跌破':'往上突破'}）→ 認賠，不要等它回來`,flip:null});
+    state:'在進場區：可以進場（市價或限價）',rangeTxt:`區間 ${asF(bottom)}～${asF(top)}（約 ${Math.round(R.W*asTf()/60)} 小時，上緣碰 ${R.tT} 次、下緣碰 ${R.tB} 次），價格到${dir>0?'下':'上'}緣、${asTfN()} K 出現${dir>0?'止跌':'止漲'} K`,
+    kill:`${asTfN()} K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（區間被${dir>0?'往下跌破':'往上突破'}）→ 認賠，不要等它回來`,flip:null});
   return P;
 }
 function asBig(B){
@@ -2095,7 +2101,44 @@ function asPlanAuto(A){
     note:big?`大局${bt}：只等${big>0?'做多':'做空'}的機會。`:null});
   return P;
 }
-function asPlanLive(A){let P=AS.method==='sweep'?asPlanSweep(A):AS.method==='range'?asPlanRange(A):AS.method==='auto'?asPlanAuto(A):asPlan(A);
+function asPlanSys(A,kind){
+  const B=A._B,c=A.c,P={},n=B?B.length:0,name={don:'通道突破',ema:'均線趨勢',rsi:'RSI 回歸'}[kind],tN=asTfN();
+  if(n<230)return Object.assign(P,{dir:0,bias:name+'・資料不足',state:'K 線資料不夠，等一下再試',up:null,dn:null});
+  const I=btInd(B),i=n-1,b=B[i],a=I.atr[i],px=A.px,last=(k,f)=>{let v=f==='h'?-Infinity:Infinity;for(let j=n-k;j<n;j++)v=f==='h'?Math.max(v,B[j].h):Math.min(v,B[j].l);return v};
+  const nH=last(20,'h'),nL=last(20,'l'),t10H=last(10,'h'),t10L=last(10,'l');
+  const none=(st,note,up,dn)=>Object.assign(P,{dir:0,bias:name+'・等待',state:st,note,up:asTick(c,up??nH),dn:asTick(c,dn??nL)});
+  let dir=0,stop=0,tp=0,exitTxt='',why='';
+  if(kind==='don'){if(I.hh20[i]!=null&&b.c>I.hh20[i])dir=1;else if(I.ll20[i]!=null&&b.c<I.ll20[i])dir=-1;
+    if(!dir)return none(`等突破：${tN} K 收盤站上 ${asF(nH)}（前 20 根最高）做多；跌破 ${asF(nL)}（前 20 根最低）做空`,`這個策略本身就是雙向掛單：可以在 Bybit 掛兩張條件單，觸發價 ${asF(nH)}／${asF(nL)}，止損各 2 ATR（約 ${asF(2*a,0)} 點）。`);
+    stop=px-dir*2*a;tp=px+dir*3*Math.abs(px-stop);why=`${tN} K 收盤${dir>0?'站上前 20 根最高點':'跌破前 20 根最低點'}`;
+    exitTxt=`<b>不設固定止盈。</b>每根 ${tN} K 收盤後，把止損移到前 10 根的最${dir>0?'低':'高'}點（現在是 <b>${asF(dir>0?t10L:t10H)}</b>），只往有利方向移。被掃到就出場，讓賺的單一直跑。`}
+  if(kind==='ema'){const up=I.e20[i]>I.e50[i],cu=up&&I.e20[i-1]<=I.e50[i-1],cd=!up&&I.e20[i-1]>=I.e50[i-1];dir=cu?1:cd?-1:0;
+    if(!dir)return none(`等交叉：EMA20（${asF(I.e20[i])}）現在在 EMA50（${asF(I.e50[i])}）${up?'上面，等它跌到下面再做空':'下面，等它漲到上面再做多'}`,`均線已經是${up?'多頭':'空頭'}，但交叉發生在之前，不追。`);
+    stop=px-dir*3*a;tp=px+dir*3*Math.abs(px-stop);why=`EMA20 ${dir>0?'上穿':'下穿'} EMA50`;
+    exitTxt=`<b>不設固定止盈。</b>在 Bybit 用「追蹤出場」，回調距離 <b>${asF(3*a,0)}</b>；或 EMA20 再反向穿過 EMA50 就出場。`}
+  if(kind==='rsi'){const r=I.rsi[i],m=I.s200[i],m5=I.s5[i];if(b.c>m&&r<10)dir=1;else if(b.c<m&&r>90)dir=-1;
+    if(!dir)return none(`等超跌／超漲：價格在 200 均線（${asF(m)}）${b.c>m?'上面，等 RSI(2) 跌到 10 以下做多':'下面，等 RSI(2) 漲到 90 以上做空'}（現在 ${r.toFixed(0)}）`,'這是逆短線的單：趨勢往上時買急跌、往下時空急漲，賺反彈那一小段。');
+    stop=px-dir*2.5*a;tp=m5;why=`RSI(2) ${r.toFixed(0)}，${dir>0?'大趨勢向上時短線超跌':'大趨勢向下時短線超漲'}`;
+    if((tp-px)*dir<=0)return none('訊號出現了，但價格已經回到 5 均線，不追',null);
+    exitTxt=`止盈抓 5 均線 <b>${asF(m5)}</b>（收盤回到 5 均線${dir>0?'上方':'下方'}就出場）。勝率高、賺得少，止損一定要設。`}
+  if(Math.abs(px-b.c)>0.7*a)return none(`${why}（${asF(b.c)}），但現在價格已經跑遠，不追`,null);
+  Object.assign(P,{dir,bias:name+(dir>0?'・做多':'・做空'),entry:asTick(c,px),sl:asTick(c,stop),tp:asTick(c,tp),rr:Math.abs(tp-px)/Math.abs(px-stop),key:kind+dir+b.t,noTrail:true,tpRef:kind!=='rsi',
+    state:'在進場區：可以進場（市價）',sysTxt:`${name}：${why}`,exitTxt,kill:`止損 ${asF(stop)}（${kind==='ema'?3:kind==='rsi'?2.5:2} ATR）被打到就出場`,flip:null});
+  return P;
+}
+function asUSOpen(now=Date.now()){
+  for(let k=0;k<8;k++){const t=new Date(now+k*864e5);const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'numeric',day:'numeric',weekday:'short'}).formatToParts(t).map(x=>[x.type,x.value]));
+    if(p.weekday==='Sat'||p.weekday==='Sun')continue;const g=Date.UTC(+p.year,+p.month-1,+p.day,9,30),d=new Date(g),ny=new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'})).getTime(),ut=new Date(d.toLocaleString('en-US',{timeZone:'UTC'})).getTime(),ts=g+(ut-ny);if(ts>now)return ts}
+  return null}
+function asPlanBracket(A){
+  const {c,atr,px}=A,R0=A.range,top=R0?R0.top:A.hi24,bot=R0?R0.bottom:A.lo24,buf=0.5*atr,P={};
+  const mk=(dir,lv)=>{const trig=asTick(c,lv+dir*buf),sl=asTick(c,lv-dir*buf),R=Math.abs(trig-sl),tp=asTick(c,trig+dir*2*R),Z=asSize(c,trig,sl),gain=Z.q*(2*R-trig*FEE_RT);return {dir,trig,sl,tp,R,Z,gain,hit:dir>0?px>=trig:px<=trig}};
+  const L=mk(1,top),S=mk(-1,bot),open=asUSOpen();
+  Object.assign(P,{dir:0,bias:'雙向掛單',up:asTick(c,top),dn:asTick(c,bot),bracket:{top,bot,src:R0?`區間（約 ${Math.round(R0.W*asTf()/60)} 小時）`:'最近的高低點',L,S,open},
+    state:L.hit?'⚡ 價格已經站上做多觸發價：如果多單成交了，立刻取消空單':S.hit?'⚡ 價格已經跌破做空觸發價：如果空單成交了，立刻取消多單':`兩張條件單掛著等：往上過 ${asF(L.trig)} 做多、往下破 ${asF(S.trig)} 做空`});
+  return P;
+}
+function asPlanLive(A){const m=AS.method;let P=m==='sweep'?asPlanSweep(A):m==='range'?asPlanRange(A):m==='auto'?asPlanAuto(A):m==='bracket'?asPlanBracket(A):['don','ema','rsi'].includes(m)?asPlanSys(A,m):asPlan(A);
   return P}
 function asManage(A,P){
   if(!AS.side||!(+AS.qty>0)||!(+AS.entry>0))return null;
@@ -2118,21 +2161,30 @@ function asManage(A,P){
 const asTrail=(c,atr)=>Math.max(50,Math.round(1.5*atr/50)*50);
 const asTrailHTML=(c,e,d,R,atr)=>{const act=asTick(c,e+d*R),dist=asTrail(c,atr);return `<div class="as-n trail">🎯 <b>Bybit「追蹤出場」照抄：</b>啟動價 <b>${asF(act)}</b>・回調距離 <b>${asF(dist,0)}</b><br><span>價格${d>0?'漲':'跌'}到 ${asF(act)}（賺到 1 倍止損距離）才開始追蹤，之後從最${d>0?'高':'低'}點回落 ${asF(dist,0)} 就自動出場。原本的止損要保留。</span></div>`};
 function asCardHTML(A,P){
-  const evTxt=A.ev?`${A.ev.dir>0?'🟢 向上':'🔴 向下'} <b>${A.ev.type}</b>：15 分 K 收盤${A.ev.dir>0?'站上':'跌破'} ${asF(A.ev.level)}（${A.ago} 根前，約 ${A.ago*15} 分鐘）`:'最近沒有結構突破';
+  const evTxt=A.ev?`${A.ev.dir>0?'🟢 向上':'🔴 向下'} <b>${A.ev.type}</b>：${asTfN()} K 收盤${A.ev.dir>0?'站上':'跌破'} ${asF(A.ev.level)}（${A.ago} 根前，約 ${A.ago*15} 分鐘）`:'最近沒有結構突破';
   const maTxt=A.maOrder>0?'多頭排列（MA7 > MA14 > MA28）':A.maOrder<0?'空頭排列（MA7 < MA14 < MA28）':'糾結（方向不明）';
   let plan='';
   if(P.dir){const Z=asSize(A.c,P.entry,P.sl),gain=Z.q*(Math.abs(P.tp-P.entry)-P.entry*FEE_RT);
     const held=AS.side&&+AS.qty>0;
     plan=`<div class="as-plan ${P.dir>0?'long':'short'}"><div class="as-h">${P.dir>0?'📈 做多計畫':'📉 做空計畫'}・<span>${held?'你已經有持倉：這是「沒持倉時」的參考，不要再下一張':P.state}</span></div>
-      <div class="as-kv"><div><span>進場</span><b>${asF(P.entry)}</b></div><div><span>止損</span><b class="down">${asF(P.sl)}</b></div><div><span>止盈</span><b class="up">${asF(P.tp)}</b></div><div><span>風報比</span><b>1 : ${P.rr.toFixed(1)}</b></div></div>
+      <div class="as-kv"><div><span>進場</span><b>${asF(P.entry)}</b></div><div><span>止損</span><b class="down">${asF(P.sl)}</b></div><div><span>${P.tpRef?'參考目標（不掛止盈）':'止盈'}</span><b class="up">${asF(P.tp)}</b></div><div><span>風報比</span><b>1 : ${P.rr.toFixed(1)}</b></div></div>
       <div class="as-kv"><div><span>數量</span><b>${Z.q} ${A.c}</b></div><div><span>訂單價值</span><b>${asF(Z.val,0)}</b></div><div><span>保證金（${AS.lev}x）</span><b>${asF(Z.margin,1)}</b></div><div><span>止損虧／止盈賺</span><b><span class="down">−${asF(Z.loss,1)}</span> / <span class="up">+${asF(gain,1)}</span></b></div></div>
       ${Z.note?`<div class="as-n warn">${Z.note}</div>`:''}${P.room?`<div class="as-n warn">${P.room}，止盈改用 ${asF(P.tp)}</div>`:''}
-      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${P.rangeTxt?`<div class="as-n go">📦 ${P.rangeTxt}</div>`:''}${P.warn?`<div class="as-n warn">⚠ ${P.warn}</div>`:''}${asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
+      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${P.sysTxt?`<div class="as-n go">📐 ${P.sysTxt}</div>`:''}${P.exitTxt?`<div class="as-n">🚪 ${P.exitTxt}</div>`:''}${P.rangeTxt?`<div class="as-n go">📦 ${P.rangeTxt}</div>`:''}${P.warn?`<div class="as-n warn">⚠ ${P.warn}</div>`:''}${P.noTrail?'':asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
       <div class="as-n">❌ ${P.kill}</div>${P.flip?`<div class="as-n">🔄 ${P.flip}</div>`:''}
       <button class="btn sm" id="asToFut">⚡ 帶入「短線：合約」模擬（方向、倍率、訂單價值、止損止盈全部填好）</button></div>`}
+  else if(P.bracket){const K=P.bracket,side=(x,lab)=>`<div class="as-plan ${x.dir>0?'long':'short'}" style="margin:.4rem 0"><div class="as-h">${lab}${x.hit?'・<span class="up">⚡ 已過觸發價</span>':''}</div>
+      <div class="as-kv"><div><span>觸發價（條件單）</span><b>${asF(x.trig)}</b></div><div><span>止損</span><b class="down">${asF(x.sl)}</b></div><div><span>止盈</span><b class="up">${asF(x.tp)}</b></div><div><span>風報比</span><b>1 : 2.0</b></div></div>
+      <div class="as-kv"><div><span>數量</span><b>${x.Z.q} ${A.c}</b></div><div><span>保證金（${AS.lev}x）</span><b>${asF(x.Z.margin,1)}</b></div><div><span>止損虧／止盈賺</span><b><span class="down">−${asF(x.Z.loss,1)}</span> / <span class="up">+${asF(x.gain,1)}</span></b></div></div>${x.Z.note?`<div class="as-n warn">${x.Z.note}</div>`:''}</div>`;
+    const op=K.open?new Date(K.open):null,left=K.open?K.open-Date.now():0;
+    plan=`<div class="as-plan"><div class="as-h">↕ 雙向掛單・${P.state}</div>
+      <div class="as-n">依據：${K.src} <b>${asF(K.bot)}～${asF(K.top)}</b>。觸發價放在區間外再多 0.5 ATR（約 ${asF(0.5*A.atr,0)} 點），減少被插針觸發。</div>
+      ${side(K.L,'📈 做多（往上突破）')}${side(K.S,'📉 做空（往下跌破）')}
+      ${op?`<div class="as-n go">⏰ 下一個節點：美股開盤 <b>${op.toLocaleString('zh-TW',{month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false})}</b>（還有 ${Math.floor(left/36e5)} 小時 ${Math.floor(left/6e4)%60} 分）。建議開盤前 15 分鐘掛好。美股假日不開盤。</div>`:''}
+      <div class="as-n">規則：① 兩張都用<b>條件單</b>、止盈止損一起勾 ② 一邊成交，<b>立刻取消另一邊</b> ③ 一天只掛一組；止損了當天不再掛 ④ 兩邊都沒觸發，隔天重新看再掛</div></div>`}
   else plan=`<div class="as-plan"><div class="as-h">⏸ ${P.state}</div>
-      <div class="as-kv"><div><span>區間上緣</span><b>${asF(P.up)}</b></div><div><span>區間下緣</span><b>${asF(P.dn)}</b></div></div>
-      <div class="as-n">${P.note||`15 分 K 收盤站上 ${asF(P.up)} → 等回踩做多；收盤跌破 ${asF(P.dn)} → 等反彈做空。中間不做。`}</div></div>`;
+      <div class="as-kv"><div><span>上方關鍵價</span><b>${asF(P.up)}</b></div><div><span>下方關鍵價</span><b>${asF(P.dn)}</b></div></div>
+      <div class="as-n">${P.note||`${asTfN()} K 收盤站上 ${asF(P.up)} → 等回踩做多；收盤跌破 ${asF(P.dn)} → 等反彈做空。中間不做。`}</div></div>`;
   return `<div class="as-top"><div class="as-px">${A.c} <b>${asF(A.px)}</b></div><div class="as-bias ${P.dir>0?'up':P.dir<0?'down':''}">${P.bias}</div></div>
     <div class="as-rows">
       <div><span>結構</span><b>${A.struct}</b></div>
@@ -2142,8 +2194,8 @@ function asCardHTML(A,P){
       <div><span>下方支撐</span><b>${asF(A.sup)}${A.sup2?'・'+asF(A.sup2):''}${A.fUp?`・FVG ${asF(A.fUp.lo)}–${asF(A.fUp.hi)}`:''}</b></div>
       ${A.ob?`<div><span>Order Block</span><b>${asF(A.ob.lo)}–${asF(A.ob.hi)}（${A.ob.dir>0?'買方區，回來常被撐住':'賣方區，回來常被壓住'}）</b></div>`:''}
       ${A.big?`<div><span>大局（4 小時）</span><b>${A.big.txt}・MA7 ${asF(A.big.m7)}・MA28 ${asF(A.big.m28)}</b></div>`:''}
-      ${A.range?`<div><span>區間</span><b>${asF(A.range.bottom)}～${asF(A.range.top)}（約 ${A.range.W/4} 小時・上緣碰 ${A.range.tT} 次、下緣碰 ${A.range.tB} 次）</b></div>`:''}
-      <div><span>15 分正常波動</span><b>約 ±${asF(A.atr,0)}（ATR）</b></div>
+      ${A.range?`<div><span>區間</span><b>${asF(A.range.bottom)}～${asF(A.range.top)}（約 ${Math.round(A.range.W*asTf()/60)} 小時・上緣碰 ${A.range.tT} 次、下緣碰 ${A.range.tB} 次）</b></div>`:''}
+      <div><span>${asTfN()} 正常波動</span><b>約 ±${asF(A.atr,0)}（ATR）</b></div>
     </div>${plan}`;
 }
 function asPosHTML(M,A){
@@ -2152,12 +2204,13 @@ function asPosHTML(M,A){
     <div class="as-kv"><div><span>現在</span><b class="${M.pnl>=0?'up':'down'}">${M.pnl>=0?'+':''}${asF(M.pnl,2)}</b></div><div><span>碰到止損</span><b class="down">${M.atSL==null?'沒設':asF(M.atSL,2)}</b></div><div><span>碰到止盈</span><b class="up">${M.atTP==null?'沒設':'+'+asF(M.atTP,2)}</b></div><div><span>保本價</span><b>${asF(M.be)}</b></div></div>
     ${M.out.map(([k,t])=>`<div class="as-n ${k}">${t}</div>`).join('')}${asTrailHTML(A.c,M.e,M.d,Rr,A.atr)}</div>`;
 }
+const asTf=()=>+AS.tf||15,asTfB=()=>asTf()===15?'15m':asTf()===60?'1h':'4h',asTfN=()=>asTf()===15?'15 分':asTf()===60?'1 小時':'4 小時';
 const AS_SRC=[
-  {n:'Bybit 合約',u:c=>`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=15&limit=1000`,
-   p:j=>{if(j.retCode!==0)throw new Error('bybit '+j.retMsg);return j.result.list.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:+r[0]+15*60e3-1})).reverse()}},
-  {n:'Binance 合約（跟 Bybit 差不到 10 塊）',u:c=>`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=15m&limit=1000`,
+  {n:'Bybit 合約',u:c=>`https://api.bybit.com/v5/market/kline?category=linear&symbol=${c}USDT&interval=${asTf()}&limit=1000`,
+   p:j=>{if(j.retCode!==0)throw new Error('bybit '+j.retMsg);return j.result.list.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:+r[0]+asTf()*60e3-1})).reverse()}},
+  {n:'Binance 合約（跟 Bybit 差不到 10 塊）',u:c=>`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=${asTfB()}&limit=1000`,
    p:k=>k.map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:r[6]}))},
-  {n:'Binance 現貨（跟 Bybit 合約可能差幾十塊）',u:c=>`${BN}/klines?symbol=${c}USDT&interval=15m&limit=1000`,
+  {n:'Binance 現貨（跟 Bybit 合約可能差幾十塊）',u:c=>`${BN}/klines?symbol=${c}USDT&interval=${asTfB()}&limit=1000`,
    p:k=>k.map(r=>({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],ct:r[6]}))},
 ];
 async function asFetch(c){
@@ -2292,15 +2345,15 @@ async function asRun(manual){
   if(AS_RT.busy)return;AS_RT.busy=true;const c=AS.coin||'BTC';$('asState').textContent='分析中…';
   try{
     const B=await asFetch(c);const live=B.at(-1);
-    const closed=B.filter(b=>b.ct<Date.now());const A=asAnalyze(closed.slice(-300),c);A.big=asBig(closed);A.px=live.c;
+    const closed=B.filter(b=>b.ct<Date.now());const A=asAnalyze(closed.slice(-300),c);A.big=asBig(closed);A._B=closed;A.px=live.c;
     const P=asPlanLive(A),M=asManage(A,P);AS_RT.res={A,P,M,at:Date.now()};AS_RT.err=null;
     const sig=[P.dir,A.ev?A.ev.i+'|'+A.ev.t:'',P.state].join('|'),sigKey=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',P.state].join('|');
-    asNotify(A,P);if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
+    asNotify(A,P);asBrAlert(A,P);if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
   }catch(e){AS_RT.err='讀不到資料（'+(e.message||'網路')+'），1 分鐘後重試'}
   AS_RT.busy=false;asRender();asSchedule(AS_RT.err?60e3:null);
 }
 function asSchedule(ms){
-  clearTimeout(AS_RT.timer);const q=15*60e3,now=Date.now();
+  clearTimeout(AS_RT.timer);const q=asTf()*60e3,now=Date.now();
   const nq=Math.floor(now/q)*q+q+8e3,nm=Math.floor(now/60e3)*60e3+63e3;AS_RT.next=ms?now+ms:Math.min(nq,nm);AS_RT.timer=setTimeout(()=>asRun(),AS_RT.next-now);
 }
 function asRender(){
@@ -2311,7 +2364,7 @@ function asRender(){
 }
 function asTickState(){
   if(!$('asState'))return;const R=AS_RT.res,left=Math.max(0,AS_RT.next-Date.now()),m=Math.floor(left/60e3),s=Math.floor(left/1e3)%60;
-  $('asState').innerHTML=AS_RT.err?`<span class="down">${AS_RT.err}</span>`:R?`資料來源：<b>${AS_RT.src||'-'}</b>・上次分析 ${new Date(R.at).toLocaleTimeString('zh-TW',{hour12:false})}・下次 ${new Date(AS_RT.next).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}（${m}:${String(s).padStart(2,'0')}）・價格每分鐘更新，訊號以 15 分 K 收盤為準・這個分頁要開著才會自動更新`:'分析中…';
+  $('asState').innerHTML=AS_RT.err?`<span class="down">${AS_RT.err}</span>`:R?`資料來源：<b>${AS_RT.src||'-'}</b>・上次分析 ${new Date(R.at).toLocaleTimeString('zh-TW',{hour12:false})}・下次 ${new Date(AS_RT.next).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}（${m}:${String(s).padStart(2,'0')}）・價格每分鐘更新，訊號以 ${asTfN()} K 收盤為準・這個分頁要開著才會自動更新`:'分析中…';
 }
 function asToFut(){
   const R=AS_RT.res;if(!R||!R.P.dir)return toast('現在沒有計畫可以帶入');if(!S.rate)return toast('還沒拿到匯率');
@@ -2328,7 +2381,7 @@ function asToFut(){
 }
 function asFill(){
   $('asCoin').value=AS.coin;$('asBal').value=AS.bal||'';$('asRisk').value=AS.risk;$('asLev').value=AS.lev;$('asSide').value=AS.side;
-  $('asQty').value=AS.qty||'';$('asEntry').value=AS.entry||'';$('asSL').value=AS.sl||'';$('asTP').value=AS.tp||'';$('asSync').checked=!!AS.sync;$('asMethod').value=AS.method||'smc';$('asMaker').checked=!!AS.maker;
+  $('asQty').value=AS.qty||'';$('asEntry').value=AS.entry||'';$('asSL').value=AS.sl||'';$('asTP').value=AS.tp||'';$('asSync').checked=!!AS.sync;$('asMethod').value=AS.method||'smc';if($('asTf'))$('asTf').value=String(asTf());$('asMaker').checked=!!AS.maker;
 }
 function asInit(){
   if(!$('asCard'))return;asFill();
@@ -2340,6 +2393,7 @@ function asInit(){
       asBeep();toast(Notification&&Notification.permission==='granted'?'🔔 已開啟：精選出現可以做的單會跳通知＋響一聲。<br><span style="color:var(--muted)">這個分頁要開著、電腦不能睡眠</span>':'🔔 已開啟聲音提醒。瀏覽器通知被擋住了，可以到網址列左邊的鎖頭把「通知」改成允許')}
     asSave();asBellLabel()};$('asMethod').onchange=e=>{AS.method=e.target.value;asSave();AS_RT.sig=null;asRun(true)};$('btGo').onclick=btRun;
   $('asCoin').onchange=e=>{AS.coin=e.target.value;asSave();AS_RT.sig=null;asRun(true)};
+  $('asTf').onchange=e=>{AS.tf=+e.target.value;asSave();AS_RT.sig=null;asRun(true);toast(`看盤助手改用 ${asTfN()} K 分析`)};
   $('asSave').onclick=()=>{
     AS.bal=+$('asBal').value||0;AS.risk=Math.min(10,Math.max(.5,+$('asRisk').value||3));AS.lev=+$('asLev').value||10;AS.side=$('asSide').value;
     AS.qty=+$('asQty').value||0;AS.entry=+$('asEntry').value||0;AS.sl=+$('asSL').value||0;AS.tp=+$('asTP').value||0;AS.sync=$('asSync').checked;
