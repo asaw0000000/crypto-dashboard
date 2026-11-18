@@ -560,7 +560,7 @@ function unitLabels(){const u=C.quote==='USDT'?'USDT':'TWD';document.querySelect
 const money=(twd,d)=>cur()+fmtN(conv(twd),d);
 const pct=n=>(n>0?'+':'')+(+n||0).toFixed(2)+'%';
 const cls=n=>n>=0?'up':'down';
-async function getJSON(url,ms=8000){
+async function getJSON(url,ms=12000){
   const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
   try{const r=await fetch(url,{signal:c.signal});if(!r.ok)throw new Error(r.status);return await r.json()}
   finally{clearTimeout(t)}
@@ -2474,8 +2474,8 @@ async function asRun(manual){
     const P=asPlanLive(A),M=asManage(A,P);AS_RT.res={A,P,M,at:Date.now()};AS_RT.err=null;
     const sig=[P.dir,A.ev?A.ev.i+'|'+A.ev.t:'',P.state].join('|'),sigKey=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',P.state].join('|');
     asNotify(A,P);asBrAlert(A,P);try{asLvAlert(A)}catch(e){}A._prev=A.px;if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
-  }catch(e){AS_RT.err='讀不到資料（'+(e.message||'網路')+'），1 分鐘後重試'}
-  AS_RT.busy=false;asRender();asSchedule(AS_RT.err?60e3:null);
+  }catch(e){const m=String(e.message||e);AS_RT.err=(/abort/i.test(m)?'交易所回應太慢（網路卡住）':'讀不到資料（'+m+'）')+'，15 秒後自動重試'+(AS_RT.res?'・下面先顯示上一次的分析':'')}
+  AS_RT.busy=false;asRender();asSchedule(AS_RT.err?15e3:null);
 }
 function asSchedule(ms){
   clearTimeout(AS_RT.timer);const q=asTf()*60e3,now=Date.now();
