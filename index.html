@@ -620,7 +620,11 @@ const TPL={
       <label><input type="checkbox" data-ind="ma99"><i style="background:#38bdf8"></i>MA99</label>
       <label><input type="checkbox" data-ind="boll"><i style="background:#94a3b8"></i>布林通道</label>
       <label><input type="checkbox" data-ind="vol"><i style="background:var(--muted)"></i>成交量</label>
-      <span class="rsi" id="rsi">RSI(14) -</span></div>`,
+      <label><input type="checkbox" data-ind="lv"><i style="background:#f87171"></i>關鍵價位</label>
+      <label><input type="checkbox" data-ind="liq"><i style="background:#f59e0b"></i>爆倉帶（估計）</label>
+      <label><input type="checkbox" data-ind="plan"><i style="background:#60a5fa"></i>助手計畫線</label>
+      <span class="rsi" id="rsi">RSI(14) -</span></div>
+    <div class="note" id="lvTxt" style="margin-top:.5rem;line-height:1.7"></div>`,
   alerts:()=>`<div class="mh"><div><h3>到價提醒</h3><div class="sub">網頁開著時有效</div></div></div>
     <div class="list" id="alertList"></div>
     <div class="form"><div class="r"><select class="in coinSel" id="alCoin"></select>
@@ -1031,7 +1035,52 @@ function setIndicators(){
   const bb=C.ind.boll?bars.map((b,i)=>[b.time,bollAt(i)]):[];
   bu.setData(bb.map(([t,v])=>v?{time:t,value:v[0]}:{time:t}));bl.setData(bb.map(([t,v])=>v?{time:t,value:v[1]}:{time:t}));
   vol.setData(C.ind.vol?bars.map(volPoint):[]);
-  updRsi();
+  updRsi();drawLevels();
+}
+/* ---------- 關鍵價位：前高前低（碰幾次、上面堆誰的止損）、成交密集價、整數關卡、爆倉帶估計、助手計畫線 ---------- */
+let LV=[];
+function drawLevels(){
+  if(!cs)return;for(const l of LV){try{cs.removePriceLine(l)}catch(e){}}LV=[];
+  const on=k=>C.ind[k]!==false,txt=$('lvTxt');if(!bars.length){if(txt)txt.innerHTML='';return}
+  const n=bars.length,px=bars[n-1].close,r=S.rate||32,dark=themeNow()==='dark';
+  let atr=0;for(let i=Math.max(1,n-14);i<n;i++)atr+=Math.max(bars[i].high-bars[i].low,Math.abs(bars[i].high-bars[i-1].close),Math.abs(bars[i].low-bars[i-1].close));atr/=Math.min(14,n-1)||1;
+  const add=(price,color,title,style=2,w=1)=>{if(!(price>0))return;LV.push(cs.createPriceLine({price,color,lineWidth:w,lineStyle:style,axisLabelVisible:true,title}))};
+  const K=3,SH=[],SL=[];for(let i=K;i<n-K;i++){let h=true,l=true;for(let j=1;j<=K;j++){if(bars[i-j].high>=bars[i].high||bars[i+j].high>bars[i].high)h=false;if(bars[i-j].low<=bars[i].low||bars[i+j].low<bars[i].low)l=false}if(h)SH.push(bars[i].high);if(l)SL.push(bars[i].low)}
+  const tol=Math.max(0.5*atr,px*0.0015),cl=(arr)=>{const g=[];for(const v of [...arr].sort((a,b)=>a-b)){const x=g.find(z=>Math.abs(z.p-v)<=tol);if(x){x.p=(x.p*x.c+v)/(x.c+1);x.c++;x.ext=Math.max(x.ext,v);x.lo=Math.min(x.lo,v)}else g.push({p:v,c:1,ext:v,lo:v})}return g};
+  const res=cl(SH).filter(z=>z.p>px).sort((a,b)=>a.p-b.p).slice(0,3),sup=cl(SL).filter(z=>z.p<px).sort((a,b)=>b.p-a.p).slice(0,3);
+  const hiAll=Math.max(...bars.map(b=>b.high)),loAll=Math.min(...bars.map(b=>b.low));
+  // volume profile POC
+  const bins=60,step=(hiAll-loAll)/bins||1,vp=new Array(bins).fill(0);for(const b of bars){const k=Math.min(bins-1,Math.max(0,Math.floor(((b.high+b.low+b.close)/3-loAll)/step)));vp[k]+=b.v||0}
+  const pk=vp.indexOf(Math.max(...vp)),poc=loAll+(pk+0.5)*step;
+  // round numbers (in USDT)
+  const pu=px/r,mag=Math.pow(10,Math.floor(Math.log10(pu))-1),rs=mag;const rUp=Math.ceil(pu/rs)*rs,rDn=Math.floor(pu/rs)*rs;
+  // estimated liquidation bands: positions opened at the highest-volume bars of the last 200
+  let liqL=[],liqS=[];
+  if(on('liq')){const recent=bars.slice(-200),top=[...recent].sort((a,b)=>(b.v||0)-(a.v||0)).slice(0,6);
+    for(const b of top)for(const L of [25,50,100]){const e=b.close;liqL.push(e*(1-1/L+0.005));liqS.push(e*(1+1/L-0.005))}
+    const band=(arr,below)=>{const g=cl(arr).filter(z=>below?z.p<px:z.p>px).sort((a,b)=>b.c-a.c||(below?b.p-a.p:a.p-b.p)).slice(0,2);return g};
+    liqL=band(liqL,true);liqS=band(liqS,false);
+    for(const z of liqL)add(z.p,'#f59e0b',`多單爆倉帶（估）×${z.c}`,1,1);for(const z of liqS)add(z.p,'#f59e0b',`空單爆倉帶（估）×${z.c}`,1,1)}
+  if(on('lv')){
+    for(const z of res)add(z.p,'#f87171',`壓力・前高${z.c>1?' 碰'+z.c+'次':''}`,2,z.c>1?2:1);
+    for(const z of sup)add(z.p,'#4ade80',`支撐・前低${z.c>1?' 碰'+z.c+'次':''}`,2,z.c>1?2:1);
+    add(poc,dark?'#e2e8f0':'#334155','成交最密集 POC',0,1);
+    add(rUp*r,'rgba(148,163,184,.7)','整數關卡',3,1);if(rDn*r<px)add(rDn*r,'rgba(148,163,184,.7)','整數關卡',3,1)}
+  // assistant plan lines (assistant prices are USDT, Bybit futures)
+  const R=typeof AS_RT!=='undefined'&&AS_RT.res,cc=S.chartCoin;let planTxt='';
+  if(on('plan')&&R&&R.A.c===cc){const P=R.P;
+    if(P.dir){add(P.entry*r,'#60a5fa','助手・進場',0,2);add(P.sl*r,'#ef4444','助手・止損',0,2);add(P.tp*r,'#22c55e',P.tpRef?'助手・參考目標':'助手・止盈',0,2);planTxt=`助手計畫：<b>${P.dir>0?'做多':'做空'}</b> 進場 ${asF(P.entry)}・止損 ${asF(P.sl)}・${P.tpRef?'參考目標':'止盈'} ${asF(P.tp)}`}
+    else if(P.bracket){const B=P.bracket;add(B.L.trig*r,'#60a5fa','助手・多單觸發',0,2);add(B.L.sl*r,'#ef4444','多單止損',1,1);add(B.S.trig*r,'#60a5fa','助手・空單觸發',0,2);add(B.S.sl*r,'#ef4444','空單止損',1,1);planTxt=`助手雙向掛單：多單觸發 ${asF(B.L.trig)}・空單觸發 ${asF(B.S.trig)}`}}
+  if(!txt)return;
+  const f=v=>fmtN(conv(v)),nr=res[0],ns=sup[0],dR=nr?(nr.p-px)/atr:null,dS=ns?(px-ns.p)/atr:null;
+  const side=dR!=null&&dS!=null?(dS<dR*0.5?'離支撐比較近：<b>偏向等支撐止跌做多</b>，不要在這裡追空':dR<dS*0.5?'離壓力比較近：<b>偏向等壓力止漲做空</b>，不要在這裡追多':'在支撐和壓力中間：<b>不做</b>，等價格靠近其中一邊'):'上下其中一邊沒有明顯價位，先不做';
+  txt.innerHTML=`<b>📏 關鍵價位解讀</b>（${INTERVALS.find(x=>x[0]===S.interval)?.[1]||S.interval} K・最近 ${n} 根）<br>
+    現價 <b>${f(px)}</b>。成交最密集 <b>${f(poc)}</b>：價格在它${px>poc?'上方，買方比較強':'下方，賣方比較強'}。<br>
+    ${nr?`上方壓力 <b>${f(nr.p)}</b>（前高${nr.c>1?`、碰過 ${nr.c} 次`:''}）：上面堆著<b>空單止損</b>，突破時常會急拉一段。<br>`:''}
+    ${ns?`下方支撐 <b>${f(ns.p)}</b>（前低${ns.c>1?`、碰過 ${ns.c} 次`:''}）：下面堆著<b>多單止損</b>，跌破時常會急殺一段。<br>`:''}
+    ${liqL.length||liqS.length?`爆倉帶（估計）：${liqS.length?`上方 ${liqS.map(z=>f(z.p)).join('、')}（空單）`:''}${liqL.length&&liqS.length?'；':''}${liqL.length?`下方 ${liqL.map(z=>f(z.p)).join('、')}（多單）`:''}。價格常會被吸過去掃一下再回來。<br>`:''}
+    → ${side}。${planTxt?'<br>'+planTxt:''}
+    <br><span style="color:var(--muted)">爆倉帶是用最近成交量最大的 K 棒，假設有人在那裡開 25x／50x／100x 推算的，不是交易所的真實資料。止損堆積位置是依照「大部分人把止損放在前高前低外面」的習慣推估。</span>`;
 }
 function updRsi(){const r=rsi();$('rsi').innerHTML=r==null?'RSI(14) -':`RSI(14) <span class="${r>70?'down':r<30?'up':''}">${r.toFixed(1)}</span>${r>70?'（超買區）':r<30?'（超賣區）':''}`}
 function updLast(){
@@ -1065,7 +1114,7 @@ function openStream(){
     if(c!==S.chartCoin||iv!==S.interval||!bars.length) return;
     const k=JSON.parse(e.data).k,r=S.rate||32;
     const b={time:Math.floor(k.t/1000)+TZ,open:+k.o*r,high:+k.h*r,low:+k.l*r,close:+k.c*r,v:+k.v};
-    if(b.time===bars[bars.length-1].time) bars[bars.length-1]=b; else if(b.time>bars[bars.length-1].time) bars.push(b); else return;
+    if(b.time===bars[bars.length-1].time) bars[bars.length-1]=b; else if(b.time>bars[bars.length-1].time){bars.push(b);setTimeout(drawLevels,0)} else return;
     updLast();
   };
   ws.onclose=()=>{if(c===S.chartCoin&&iv===S.interval)wsT=setTimeout(openStream,5000)};
@@ -2371,6 +2420,7 @@ function asSchedule(ms){
   const nq=Math.floor(now/q)*q+q+8e3,nm=Math.floor(now/60e3)*60e3+63e3;AS_RT.next=ms?now+ms:Math.min(nq,nm);AS_RT.timer=setTimeout(()=>asRun(),AS_RT.next-now);
 }
 function asRender(){
+  try{drawLevels()}catch(e){}
   if(!$('asCard'))return;const R=AS_RT.res;
   if(R){$('asCard').innerHTML=asCardHTML(R.A,R.P);$('asPos').innerHTML=asPosHTML(R.M,R.A);if($('asToFut'))$('asToFut').onclick=asToFut}
   $('asLog').innerHTML=AS_RT.log.length?AS_RT.log.map(l=>`<div class="as-li"><span>${new Date(l.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}</span><b>${l.c} ${asF(l.px)}・${l.bias}</b><i>${l.state}${l.e?`・進 ${asF(l.e)} 損 ${asF(l.sl)} 盈 ${asF(l.tp)}`:''}</i></div>`).join(''):'<div class="empty">訊號改變時會記在這裡</div>';
@@ -2635,7 +2685,7 @@ $('search').addEventListener('keydown',e=>{
 });
 
 buildLayout(); unitLabels(); applyAppearance(); fillCoinSelects(); initChart(); tick(); setInterval(tick,30000);
-document.querySelectorAll('#indBar [data-ind]').forEach(cb=>{cb.checked=!!C.ind[cb.dataset.ind];cb.onchange=()=>{C.ind[cb.dataset.ind]=cb.checked;saveC();setIndicators()}});
+document.querySelectorAll('#indBar [data-ind]').forEach(cb=>{cb.checked=C.ind[cb.dataset.ind]===undefined?['lv','liq','plan'].includes(cb.dataset.ind):!!C.ind[cb.dataset.ind];cb.onchange=()=>{C.ind[cb.dataset.ind]=cb.checked;saveC();setIndicators()}});
 $('intervals').onclick=e=>{const v=e.target.dataset?.i;if(v){S.interval=v;store.set('interval',v);loadChart()}};
 $('alAdd').onclick=()=>{const p=num('alPrice');if(!(p>0))return toast('請輸入價格');S.alerts.push({c:$('alCoin').value,d:$('alDir').value,p,hit:false});store.set('alerts',S.alerts);setNum('alPrice','');renderAlerts();try{Notification.permission==='default'&&Notification.requestPermission()}catch{}};
 migratePf();
