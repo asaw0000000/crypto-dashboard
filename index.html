@@ -737,7 +737,7 @@ const TPL={
       <div class="lh" style="margin-top:1rem">已結束</div><div class="list" id="gdHist"></div>
     </div></div>`,
   assist:()=>`<div class="mh"><div><h3>📡 看盤助手・每 15 分鐘自動分析</h3><div class="sub">用 15 分 K 自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
-      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option><option value="range">方法：區間交易（上緣空、下緣多）</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
@@ -1993,7 +1993,15 @@ function asAnalyze(B,c){
         const win=B.slice(Math.max(sv.i+1,k-3),k+1),ext=dir>0?Math.min(...win.map(x=>x.l)):Math.max(...win.map(x=>x.h));
         const swept=dir>0?ext<sv.p-0.05*atr:ext>sv.p+0.05*atr,back=dir>0?b.c>sv.p:b.c<sv.p,deep=Math.abs(ext-sv.p)<2.5*atr;
         if(swept&&back&&deep){sweep={dir,level:sv.p,ext,ago:n-1-k};break}}}}
-  return {sweep,c,px,t:last.t,closedT:B[n-1].t,m7,m14,m28,atr,trend,ev,evs,ob,fUp,fDn,hi24,lo24,res:resA[0]||null,res2:resA[1]||null,sup:supA[0]||null,sup2:supA[1]||null,lastH:SH.at(-1)||null,lastL:SL.at(-1)||null,struct,maOrder,ago:ev?n-1-ev.i:null};
+  let range=null;
+  for(const W of [192,144,96,64]){if(n<W+10||range)continue;const s0=n-1-W,sh=SH.filter(x=>x.i>=s0).map(x=>x.p).sort((a,b)=>b-a),sl=SL.filter(x=>x.i>=s0).map(x=>x.p).sort((a,b)=>a-b);
+    if(sh.length<2||sl.length<2)continue;const h0=sh[0]-sl[0],tol=Math.max(0.6*atr,0.1*h0);
+    const edge=(v,up)=>{for(let k=0;k<Math.min(2,v.length);k++){const cnt=v.filter(p=>up?p>=v[k]-tol&&p<=v[k]+0.01:p<=v[k]+tol&&p>=v[k]-0.01).length;if(cnt>=2)return {p:v[k],cnt}}return null};
+    const T=edge(sh,true),Bt=edge(sl,false);if(!T||!Bt)continue;const h=T.p-Bt.p;if(h<3*atr||h>16*atr)continue;
+    let out=0;for(let i=s0;i<n;i++)if(B[i].c>T.p+0.5*atr||B[i].c<Bt.p-0.5*atr)out++;if(out>3)continue;
+    const m28a=asMA(cl,28,n-1-Math.floor(W/2));if(Math.abs(m28-m28a)>0.35*h)continue;
+    range={top:T.p,bottom:Bt.p,h,W,tT:T.cnt,tB:Bt.cnt}}
+  return {range,bar:{o:last.o,h:last.h,l:last.l,c:last.c},sweep,c,px,t:last.t,closedT:B[n-1].t,m7,m14,m28,atr,trend,ev,evs,ob,fUp,fDn,hi24,lo24,res:resA[0]||null,res2:resA[1]||null,sup:supA[0]||null,sup2:supA[1]||null,lastH:SH.at(-1)||null,lastL:SL.at(-1)||null,struct,maOrder,ago:ev?n-1-ev.i:null};
 }
 function asSize(c,entry,sl){
   const bal=+AS.bal||0,risk=bal*(+AS.risk||3)/100,st=asStep(c),dist=Math.abs(entry-sl)+entry*FEE_RT;
@@ -2048,7 +2056,27 @@ function asPlanSweep(A){
     kill:`15 分 K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（掃出來的${dir>0?'低':'高'}點）→ 這個方向失敗`,flip:null});
   return P;
 }
-function asPlanLive(A){let P=AS.method==='sweep'?asPlanSweep(A):asPlan(A);
+function asPlanRange(A){
+  const {c,atr,range:R,bar}=A,P={},px=A.px;
+  const none=(st,note)=>Object.assign(P,{dir:0,bias:'區間交易・等待',up:R?asTick(c,R.top):(A.lastH?asTick(c,A.lastH.p):null),dn:R?asTick(c,R.bottom):(A.lastL?asTick(c,A.lastL.p):null),state:st,note});
+  if(!R)return none('現在不是區間盤整（找不到上下緣都被碰過 2 次以上的區間），區間交易不做','價格有明顯方向時，改用「精選結構」');
+  const {top,bottom,h}=R,zL=bottom+0.25*h,zS=top-0.25*h;
+  if(bar.c>top+0.1*atr)return none(`區間被往上突破（收盤 ${asF(bar.c)} 站上上緣 ${asF(top)}），區間交易暫停`,'突破後不要逆著做空。等新的區間形成，或改用「精選結構」');
+  if(bar.c<bottom-0.1*atr)return none(`區間被往下跌破（收盤 ${asF(bar.c)} 跌破下緣 ${asF(bottom)}），區間交易暫停`,'跌破後不要接刀做多。等新的區間形成，或改用「精選結構」');
+  const body=Math.abs(bar.c-bar.o),lw=Math.min(bar.o,bar.c)-bar.l,uw=bar.h-Math.max(bar.o,bar.c);
+  const note=`跌到 ${asF(bottom)}～${asF(zL)} 出現止跌 K（收綠，或下影線比實體長）→ 做多；漲到 ${asF(zS)}～${asF(top)} 出現止漲 K → 做空。中間不做。止損放在區間外，被突破就認賠。`;
+  let dir=0;
+  if(bar.l<=zL&&bar.c>bottom&&(bar.c>bar.o||lw>=body)&&px<=zL+0.1*h)dir=1;
+  else if(bar.h>=zS&&bar.c<top&&(bar.c<bar.o||uw>=body)&&px>=zS-0.1*h)dir=-1;
+  if(!dir)return none(`區間 ${asF(bottom)}～${asF(top)}：現價${px<=zL?'在下緣附近，等止跌 K':px>=zS?'在上緣附近，等止漲 K':'在中間，不做'}`,note);
+  const buf=Math.max(0.5*atr,0.1*h),sl=dir>0?bottom-buf:top+buf,tp=dir>0?top-0.1*h:bottom+0.1*h,entry=px,rr=Math.abs(tp-entry)/Math.abs(entry-sl),need=AS.strict!==false?2:1.5;
+  if(rr<need)return none(`區間${dir>0?'下':'上'}緣出現${dir>0?'止跌':'止漲'} K，但風報比只有 1:${rr.toFixed(1)}（要 ≥ 1:${need}），不做`,note);
+  Object.assign(P,{dir,bias:dir>0?'區間下緣・偏多':'區間上緣・偏空',entry:asTick(c,entry),sl:asTick(c,sl),tp:asTick(c,tp),rr,key:'rg'+dir+Math.round(dir>0?bottom:top),
+    state:'在進場區：可以進場（市價或限價）',rangeTxt:`區間 ${asF(bottom)}～${asF(top)}（約 ${R.W/4} 小時，上緣碰 ${R.tT} 次、下緣碰 ${R.tB} 次），價格到${dir>0?'下':'上'}緣、15 分 K 出現${dir>0?'止跌':'止漲'} K`,
+    kill:`15 分 K 收盤${dir>0?'跌破':'站上'} ${asF(sl)}（區間被${dir>0?'往下跌破':'往上突破'}）→ 認賠，不要等它回來`,flip:null});
+  return P;
+}
+function asPlanLive(A){let P=AS.method==='sweep'?asPlanSweep(A):AS.method==='range'?asPlanRange(A):asPlan(A);
   return P}
 function asManage(A,P){
   if(!AS.side||!(+AS.qty>0)||!(+AS.entry>0))return null;
@@ -2080,12 +2108,12 @@ function asCardHTML(A,P){
       <div class="as-kv"><div><span>進場</span><b>${asF(P.entry)}</b></div><div><span>止損</span><b class="down">${asF(P.sl)}</b></div><div><span>止盈</span><b class="up">${asF(P.tp)}</b></div><div><span>風報比</span><b>1 : ${P.rr.toFixed(1)}</b></div></div>
       <div class="as-kv"><div><span>數量</span><b>${Z.q} ${A.c}</b></div><div><span>訂單價值</span><b>${asF(Z.val,0)}</b></div><div><span>保證金（${AS.lev}x）</span><b>${asF(Z.margin,1)}</b></div><div><span>止損虧／止盈賺</span><b><span class="down">−${asF(Z.loss,1)}</span> / <span class="up">+${asF(gain,1)}</span></b></div></div>
       ${Z.note?`<div class="as-n warn">${Z.note}</div>`:''}${P.room?`<div class="as-n warn">${P.room}，止盈改用 ${asF(P.tp)}</div>`:''}
-      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
+      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${P.rangeTxt?`<div class="as-n go">📦 ${P.rangeTxt}</div>`:''}${asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
       <div class="as-n">❌ ${P.kill}</div>${P.flip?`<div class="as-n">🔄 ${P.flip}</div>`:''}
       <button class="btn sm" id="asToFut">⚡ 帶入「短線：合約」模擬（方向、倍率、訂單價值、止損止盈全部填好）</button></div>`}
   else plan=`<div class="as-plan"><div class="as-h">⏸ ${P.state}</div>
       <div class="as-kv"><div><span>區間上緣</span><b>${asF(P.up)}</b></div><div><span>區間下緣</span><b>${asF(P.dn)}</b></div></div>
-      <div class="as-n">15 分 K 收盤站上 ${asF(P.up)} → 等回踩做多；收盤跌破 ${asF(P.dn)} → 等反彈做空。中間不做。</div></div>`;
+      <div class="as-n">${P.note||`15 分 K 收盤站上 ${asF(P.up)} → 等回踩做多；收盤跌破 ${asF(P.dn)} → 等反彈做空。中間不做。`}</div></div>`;
   return `<div class="as-top"><div class="as-px">${A.c} <b>${asF(A.px)}</b></div><div class="as-bias ${P.dir>0?'up':P.dir<0?'down':''}">${P.bias}</div></div>
     <div class="as-rows">
       <div><span>結構</span><b>${A.struct}</b></div>
@@ -2094,6 +2122,7 @@ function asCardHTML(A,P){
       <div><span>上方壓力</span><b>${asF(A.res)}${A.res2?'・'+asF(A.res2):''}${A.fDn?`・FVG ${asF(A.fDn.lo)}–${asF(A.fDn.hi)}`:''}</b></div>
       <div><span>下方支撐</span><b>${asF(A.sup)}${A.sup2?'・'+asF(A.sup2):''}${A.fUp?`・FVG ${asF(A.fUp.lo)}–${asF(A.fUp.hi)}`:''}</b></div>
       ${A.ob?`<div><span>Order Block</span><b>${asF(A.ob.lo)}–${asF(A.ob.hi)}（${A.ob.dir>0?'買方區，回來常被撐住':'賣方區，回來常被壓住'}）</b></div>`:''}
+      ${A.range?`<div><span>區間</span><b>${asF(A.range.bottom)}～${asF(A.range.top)}（約 ${A.range.W/4} 小時・上緣碰 ${A.range.tT} 次、下緣碰 ${A.range.tB} 次）</b></div>`:''}
       <div><span>15 分正常波動</span><b>約 ±${asF(A.atr,0)}（ATR）</b></div>
     </div>${plan}`;
 }
@@ -2131,7 +2160,7 @@ async function btFetch(c,days){
 }
 
 const BT_V=[{n:'精選結構',fn:A=>asPlan(A,false,true),col:'#60a5fa'},{n:'精選＋寬止損',fn:A=>asPlan(A,true,true),col:'#22c55e'},
-  {n:'掃流動性',fn:asPlanSweep,col:'#f59e0b'}];
+  {n:'掃流動性',fn:asPlanSweep,col:'#f59e0b'},{n:'區間交易',fn:asPlanRange,col:'#a78bfa'}];
 function btSim(B,AA,v,bal0,riskPct,maker,taker){
   let eq=bal0,pos=null,ord=null,peak=bal0,mdd=0,fees=0,lastKey=null,day='',dayN=0,dead=false;const T=[],curve=[];const st=asStep('BTC');
   const dk=t=>new Date(t+8*36e5).toISOString().slice(0,10);
