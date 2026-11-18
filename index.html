@@ -451,7 +451,7 @@ const BGS={
     light:'radial-gradient(60rem 40rem at 80% 10%,#fff,transparent 60%),linear-gradient(160deg,#f4f4f5,#e4e4e7)'},
 };
 const MODS={
-  stats:{n:'報價卡',ic:'grid'}, wallet:{n:'錢包總覽・劃轉',ic:'wallet'}, assist:{n:'看盤助手',ic:'bot'}, notes:{n:'交易筆記',ic:'edit'}, chart:{n:'K 線圖',ic:'chart'}, alerts:{n:'到價提醒',ic:'bell'},
+  stats:{n:'報價卡',ic:'grid'}, wallet:{n:'錢包總覽・劃轉',ic:'wallet'}, assist:{n:'看盤助手',ic:'bot'}, flow:{n:'訂單流',ic:'trend'}, us:{n:'美股・新聞・經濟日曆',ic:'list'}, notes:{n:'交易筆記',ic:'edit'}, chart:{n:'K 線圖',ic:'chart'}, alerts:{n:'到價提醒',ic:'bell'},
   market:{n:'行情列表',ic:'list'}, fng:{n:'恐懼貪婪指數',ic:'gauge'}, paper:{n:'長期：現貨投資',ic:'wallet'},
   alloc:{n:'模擬持倉分布',ic:'pie'}, calc:{n:'部位計算機',ic:'calc'},
   risk:{n:'風險評估與分析',ic:'shield'}, perf:{n:'交易績效',ic:'trend'},
@@ -465,12 +465,12 @@ const DEF={
   blur:22, opacity:25, radius:22, autoScale:true, scale:100, anim:true, collapsed:false,
   refresh:10, quote:'USDT',
   coins:['BTC','ETH','SOL','XRP','DOGE','ADA'],
-  ind:{ma7:true,ma25:true,ma99:false,boll:false,vol:true},
-  feeMaker:0.1, feeTaker:0.2, slip:0.05, initial:5000, ver:10, gridFee:0.05,
+  ind:{ma7:true,ma25:true,ma99:false,boll:false,vol:true,lv:true,liq:true,plan:true,pd:true},
+  feeMaker:0.1, feeTaker:0.2, slip:0.05, initial:5000, ver:11, gridFee:0.05,
   risk:{on:true,preset:'std',requireStop:true,autoStopPct:8,maxRiskPct:2,maxCoinPct:50,minCashPct:30,dailyLossPct:5,maxStreak:3,coolHours:12,maxTradesDay:5,ddLockPct:20,majorsOnly:true,majors:['BTC','ETH']},
   life:{monthly:'',savings:'',invested:''},
   layout:[
-    {id:'stats',size:'xl',show:true},{id:'wallet',size:'xl',show:true},{id:'assist',size:'xl',show:true},{id:'notes',size:'xl',show:true},{id:'chart',size:'l',show:true},{id:'calc',size:'s',show:true},
+    {id:'stats',size:'xl',show:true},{id:'wallet',size:'xl',show:true},{id:'assist',size:'xl',show:true},{id:'flow',size:'xl',show:true},{id:'us',size:'xl',show:true},{id:'notes',size:'xl',show:true},{id:'chart',size:'l',show:true},{id:'calc',size:'s',show:true},
     {id:'paper',size:'xl',show:true},
     {id:'guard',size:'l',show:true},{id:'dca',size:'s',show:true},
     {id:'fut',size:'xl',show:true},{id:'grid',size:'xl',show:true},
@@ -522,7 +522,8 @@ function loadSettings(){
   if((saved.ver||0)<8)s.quote='USDT';
   if((saved.ver||0)<9&&!s.layout.some(m=>m.id==='assist')){const i=s.layout.findIndex(m=>m.id==='ai');if(i>=0)s.layout[i]={id:'assist',size:'xl',show:true};else{const j=s.layout.findIndex(m=>m.id==='wallet')+1;s.layout.splice(j,0,{id:'assist',size:'xl',show:true})}}
   if((saved.ver||0)<10&&(saved.ver||0)>=3){const take=id=>{const i=s.layout.findIndex(m=>m.id===id);return i>=0?s.layout.splice(i,1)[0]:{id,size:'xl',show:true}};const f=take('fut'),n=take('notes');f.show=true;let i=s.layout.findIndex(m=>m.id==='assist')+1;if(!i)i=s.layout.length;s.layout.splice(i,0,f,n)}
-  s.ver=10;s.risk=Object.assign(structuredClone(DEF.risk),saved.risk||{});s.life=Object.assign({},DEF.life,saved.life||{});
+  if((saved.ver||0)>=3&&(saved.ver||0)<11){let i=s.layout.findIndex(m=>m.id==='assist')+1;if(!i)i=1;for(const id of ['flow','us'])if(!s.layout.some(m=>m.id===id))s.layout.splice(i++,0,{id,size:'xl',show:true})}
+  s.ver=11;s.risk=Object.assign(structuredClone(DEF.risk),saved.risk||{});s.life=Object.assign({},DEF.life,saved.life||{});
   s.ind=Object.assign({},DEF.ind,s.ind);
   const ids=s.layout.map(m=>m.id);
   for(const m of DEF.layout) if(!ids.includes(m.id)) s.layout.push({...m});
@@ -623,6 +624,7 @@ const TPL={
       <label><input type="checkbox" data-ind="lv"><i style="background:#f87171"></i>關鍵價位</label>
       <label><input type="checkbox" data-ind="liq"><i style="background:#f59e0b"></i>爆倉帶（估計）</label>
       <label><input type="checkbox" data-ind="plan"><i style="background:#60a5fa"></i>助手計畫線</label>
+      <label><input type="checkbox" data-ind="pd"><i style="background:#c084fc"></i>前一天價值區</label>
       <span class="rsi" id="rsi">RSI(14) -</span></div>
     <div class="note" id="lvTxt" style="margin-top:.5rem;line-height:1.7"></div>`,
   alerts:()=>`<div class="mh"><div><h3>到價提醒</h3><div class="sub">網頁開著時有效</div></div></div>
@@ -778,6 +780,28 @@ const TPL={
         <div class="lh" style="margin-top:.8rem">訊號紀錄</div><div class="as-log" id="asLog"></div>
       </div>
     </div>`,
+  flow:()=>`<div class="mh"><div><h3>🌊 訂單流・誰在買、誰在賣</h3><div class="sub">前一天價值區、CVD 背離、未平倉量、多空比、資金費率、盤口大單牆・每分鐘更新・Binance／Bybit 公開資料</div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><button class="btn sm" id="flNow">⟳ 立即更新</button></div></div>
+    <div class="as-st" id="flState">準備中…</div>
+    <div id="flVerdict"></div>
+    <div class="fl-grid" id="flGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.6rem;margin:.6rem 0"></div>
+    <div class="lh">CVD（買賣力道累加）vs 價格・最近 24 小時（15 分 K）</div>
+    <svg id="flCvd" viewBox="0 0 300 70" preserveAspectRatio="none" class="bt-eq" style="height:90px"></svg>
+    <div class="note" id="flCvdTxt"><span style="color:#94a3b8">━ 價格</span>　<span style="color:#38bdf8">━ CVD</span></div>
+    <details class="learn"><summary>名詞說明</summary><div>
+      <b>前一天價值區</b>：前一天 70% 成交量集中的價格範圍。上緣 VAH、下緣 VAL，成交最多的價格叫 POC。價格在價值區上面偏強、下面偏弱、裡面是盤整。<br>
+      <b>Delta／CVD</b>：Delta＝一根 K 棒裡「市價買」減「市價賣」；CVD 是 Delta 一路加起來的線，看買賣力道的方向。<br>
+      <b>背離</b>：價格創新低，CVD 卻沒有創新低 → 看漲背離（賣壓變弱）；價格創新高，CVD 沒有創新高 → 看跌背離（買盤變弱）。<br>
+      <b>未平倉量 OI</b>：市場上還開著的合約。價格漲＋OI 漲＝新多單進場；價格漲＋OI 跌＝空單回補；價格跌＋OI 漲＝新空單進場；價格跌＋OI 跌＝多單平倉或爆倉。<br>
+      <b>多空比</b>：Bybit 上開多和開空的帳戶比例。散戶太一面倒時，常常要反著看。<br>
+      <b>資金費率</b>：正的＝多方付錢給空方（多單擁擠）；負的＝空方付錢（空單擁擠，容易軋空）。<br>
+      <b>盤口大單牆</b>：掛單簿上特別大的掛單，常常是短線的支撐或壓力，但也可能隨時撤掉。</div></details>`,
+  us:()=>`<div class="mh"><div><h3>🇺🇸 美股・新聞・經濟日曆</h3><div class="sub">比特幣最近跟美國科技股連動很強：下單前先看美股、今天有沒有大數據（CPI、聯準會）・TradingView 免費小工具</div></div></div>
+    <div id="usTick" style="min-height:80px"></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.8rem;margin-top:.6rem">
+      <div><div class="lh">📰 即時新聞</div><div id="usNews" style="height:440px"></div></div>
+      <div><div class="lh">📅 經濟日曆（美國・中高重要性）</div><div id="usCal" style="height:440px"></div></div></div>
+    <div class="note" style="margin-top:.4rem">台灣時間晚上 9:30／10:30 是美國數據和美股開盤最常見的時間；數據公布前後 15 分鐘不下單。小工具內容由 TradingView 提供，載入要幾秒。</div>`,
   notes:()=>`<div class="mh"><div><h3>📒 交易筆記</h3><div class="sub">每一筆 Bybit 交易都記在這裡：進出場、止盈止損、盈虧、手續費和檢討・自動算勝率和盈虧比</div></div>
       <div class="r"><button class="btn sm" id="jNew">＋ 新增一筆</button><button class="btn ghost sm" id="jCsv">匯出 CSV</button><button class="btn ghost sm" id="bkOut" title="把這個瀏覽器裡的全部資料存成一個檔案">💾 備份全部資料</button><button class="btn ghost sm" id="bkIn">📂 還原</button><button class="btn ghost sm" id="jImp" title="把交易紀錄檔加進筆記，不會覆蓋原本的資料">📥 匯入交易</button><input type="file" id="jImpFile" accept=".json" hidden><input type="file" id="bkFile" accept=".json" hidden></div></div>
     <div class="r" style="align-items:center;margin-bottom:.6rem;flex-wrap:wrap"><div class="seg" id="jView"><button data-v="real">💰 真實</button><button data-v="sim">🧪 模擬</button><button data-v="all">全部</button></div><span class="note" style="margin:0" id="jViewN"></span></div>
@@ -1066,6 +1090,8 @@ function drawLevels(){
     for(const z of sup)add(z.p,'#4ade80',`支撐・前低${z.c>1?' 碰'+z.c+'次':''}`,2,z.c>1?2:1);
     add(poc,dark?'#e2e8f0':'#334155','成交最密集 POC',0,1);
     add(rUp*r,'rgba(148,163,184,.7)','整數關卡',3,1);if(rDn*r<px)add(rDn*r,'rgba(148,163,184,.7)','整數關卡',3,1)}
+  if(on('pd')&&typeof FLOW!=='undefined'&&FLOW&&FLOW.pd&&FLOW.c===S.chartCoin){const D=FLOW.pd,cP='#c084fc';
+    add(D.hi*r,cP,'前一天最高 pdHigh',1,1);add(D.lo*r,cP,'前一天最低 pdLow',1,1);add(D.poc*r,cP,'前一天 POC',0,2);add(D.vah*r,cP,'價值區上緣 VAH',2,1);add(D.val*r,cP,'價值區下緣 VAL',2,1);if(D.open)add(D.open*r,'#e879f9','今日開盤 dOpen',3,1)}
   // assistant plan lines (assistant prices are USDT, Bybit futures)
   const R=typeof AS_RT!=='undefined'&&AS_RT.res,cc=S.chartCoin;let planTxt='';
   if(on('plan')&&R&&R.A.c===cc){const P=R.P;
@@ -2230,7 +2256,7 @@ function asCardHTML(A,P){
       <div class="as-kv"><div><span>進場</span><b>${asF(P.entry)}</b></div><div><span>止損</span><b class="down">${asF(P.sl)}</b></div><div><span>${P.tpRef?'參考目標（不掛止盈）':'止盈'}</span><b class="up">${asF(P.tp)}</b></div><div><span>風報比</span><b>1 : ${P.rr.toFixed(1)}</b></div></div>
       <div class="as-kv"><div><span>數量</span><b>${Z.q} ${A.c}</b></div><div><span>訂單價值</span><b>${asF(Z.val,0)}</b></div><div><span>保證金（${AS.lev}x）</span><b>${asF(Z.margin,1)}</b></div><div><span>止損虧／止盈賺</span><b><span class="down">−${asF(Z.loss,1)}</span> / <span class="up">+${asF(gain,1)}</span></b></div></div>
       ${Z.note?`<div class="as-n warn">${Z.note}</div>`:''}${P.room?`<div class="as-n warn">${P.room}，止盈改用 ${asF(P.tp)}</div>`:''}
-      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${P.sysTxt?`<div class="as-n go">📐 ${P.sysTxt}</div>`:''}${P.exitTxt?`<div class="as-n">🚪 ${P.exitTxt}</div>`:''}${P.rangeTxt?`<div class="as-n go">📦 ${P.rangeTxt}</div>`:''}${P.warn?`<div class="as-n warn">⚠ ${P.warn}</div>`:''}${P.noTrail?'':asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
+      ${P.sweepTxt?`<div class="as-n go">💧 ${P.sweepTxt}</div>`:''}${P.sysTxt?`<div class="as-n go">📐 ${P.sysTxt}</div>`:''}${P.exitTxt?`<div class="as-n">🚪 ${P.exitTxt}</div>`:''}${P.rangeTxt?`<div class="as-n go">📦 ${P.rangeTxt}</div>`:''}${P.warn?`<div class="as-n warn">⚠ ${P.warn}</div>`:''}${typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&Date.now()-FLOW.at<6e5&&FLOW.score*P.dir<=-1.5?`<div class="as-n warn">⚠ 訂單流${FLOW.bias<0?'偏空':'偏多'}（${FLOW.score.toFixed(1)}），跟這張${P.dir>0?'多':'空'}單方向相反：數量減半，或等訂單流轉中性再做</div>`:typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&FLOW.score*P.dir>=1.5?`<div class="as-n go">✅ 訂單流也${P.dir>0?'偏多':'偏空'}（${FLOW.score>=0?'+':''}${FLOW.score.toFixed(1)}），方向一致</div>`:''}${P.noTrail?'':asTrailHTML(A.c,P.entry,P.dir,Math.abs(P.entry-P.sl),A.atr)}
       <div class="as-n">❌ ${P.kill}</div>${P.flip?`<div class="as-n">🔄 ${P.flip}</div>`:''}
       <button class="btn sm" id="asToFut">⚡ 帶入「短線：合約」模擬（方向、倍率、訂單價值、止損止盈全部填好）</button></div>`}
   else if(P.bracket){const K=P.bracket,side=(x,lab)=>`<div class="as-plan ${x.dir>0?'long':'short'}" style="margin:.4rem 0"><div class="as-h">${lab}${x.hit?'・<span class="up">⚡ 已過觸發價</span>':''}</div>
@@ -2256,6 +2282,7 @@ function asCardHTML(A,P){
       ${A.ob?`<div><span>Order Block</span><b>${asF(A.ob.lo)}–${asF(A.ob.hi)}（${A.ob.dir>0?'買方區，回來常被撐住':'賣方區，回來常被壓住'}）</b></div>`:''}
       ${A.big?`<div><span>大局（4 小時）</span><b>${A.big.txt}・MA7 ${asF(A.big.m7)}・MA28 ${asF(A.big.m28)}</b></div>`:''}
       ${A.range?`<div><span>區間</span><b>${asF(A.range.bottom)}～${asF(A.range.top)}（約 ${Math.round(A.range.W*asTf()/60)} 小時・上緣碰 ${A.range.tT} 次、下緣碰 ${A.range.tB} 次）</b></div>`:''}
+      ${typeof FLOW!=='undefined'&&FLOW&&FLOW.c===A.c&&Date.now()-FLOW.at<6e5?`<div><span>訂單流</span><b>${FLOW.bias>0?'🟢 偏多':FLOW.bias<0?'🔴 偏空':'⚪ 中性'}（${FLOW.score>=0?'+':''}${FLOW.score.toFixed(1)}）${FLOW.div?'・'+(FLOW.div>0?'看漲背離':'看跌背離'):''}${FLOW.pdPos!=null?'・'+(FLOW.pdPos>0?'在前一天價值區上方':FLOW.pdPos<0?'在前一天價值區下方':'在前一天價值區裡'):''}</b></div>`:''}
       <div><span>${asTfN()} 正常波動</span><b>約 ±${asF(A.atr,0)}（ATR）</b></div>
     </div>${plan}`;
 }
@@ -2447,6 +2474,68 @@ function asFill(){
   $('asCoin').value=AS.coin;$('asBal').value=AS.bal||'';$('asRisk').value=AS.risk;$('asLev').value=AS.lev;$('asSide').value=AS.side;
   $('asQty').value=AS.qty||'';$('asEntry').value=AS.entry||'';$('asSL').value=AS.sl||'';$('asTP').value=AS.tp||'';$('asSync').checked=!!AS.sync;$('asMethod').value=AS.method||'smc';if($('asTf'))$('asTf').value=String(asTf());$('asMaker').checked=!!AS.maker;
 }
+/* ======================================================================
+   訂單流：前一天價值區、CVD 背離、OI、多空比、資金費率、盤口
+   ====================================================================== */
+let FLOW=null;const FL_RT={busy:false,timer:null};
+function flVP(bars){const hi=Math.max(...bars.map(b=>b.h)),lo=Math.min(...bars.map(b=>b.l)),N=50,st=(hi-lo)/N||1,v=new Array(N).fill(0);
+  for(const b of bars){const k=Math.min(N-1,Math.max(0,Math.floor(((b.h+b.l+b.c)/3-lo)/st)));v[k]+=b.v}
+  const tot=v.reduce((a,x)=>a+x,0);let pk=v.indexOf(Math.max(...v)),a=pk,z=pk,acc=v[pk];
+  while(acc<tot*0.7&&(a>0||z<N-1)){const up=z<N-1?v[z+1]:-1,dn=a>0?v[a-1]:-1;if(up>=dn){z++;acc+=v[z]}else{a--;acc+=v[a]}}
+  return {hi,lo,poc:lo+(pk+0.5)*st,vah:lo+(z+1)*st,val:lo+a*st}}
+async function flFetchK(c){
+  const srcs=[`https://fapi.binance.com/fapi/v1/klines?symbol=${c}USDT&interval=15m&limit=400`,`${BN}/klines?symbol=${c}USDT&interval=15m&limit=400`];
+  for(const u of srcs){try{const k=await getJSON(u);if(k.length>100)return k.map(r=>({t:+r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],v:+r[5],ct:+r[6],d:2*(+r[9])-(+r[5])}))}catch(e){}}
+  throw new Error('讀不到 K 線')}
+async function flRun(){
+  if(FL_RT.busy||!$('flGrid'))return;FL_RT.busy=true;const c=S.chartCoin||'BTC',F={c,at:Date.now(),items:[],score:0};
+  const by=p=>getJSON('https://api.bybit.com/v5/market/'+p).then(j=>{if(j.retCode!==0)throw new Error(j.retMsg);return j.result});
+  const [K,OI,LS,TK,OB]=await Promise.allSettled([flFetchK(c),by(`open-interest?category=linear&symbol=${c}USDT&intervalTime=1h&limit=48`),by(`account-ratio?category=linear&symbol=${c}USDT&period=1h&limit=24`),by(`tickers?category=linear&symbol=${c}USDT`),by(`orderbook?category=linear&symbol=${c}USDT&limit=200`)]);
+  const pt=(w,t)=>{F.score+=w;F.items.push([w,t])};
+  if(K.status==='fulfilled'){const B=K.value.filter(b=>b.ct<Date.now()),px=K.value.at(-1).c;F.px=px;
+    const day=t=>Math.floor(t/864e5),today=day(Date.now()),Y=B.filter(b=>day(b.t)===today-1),T=K.value.filter(b=>day(b.t)===today);
+    if(Y.length>=60){F.pd=flVP(Y);F.pd.open=T.length?T[0].o:null;const D=F.pd;
+      F.pdPos=px>D.vah?1:px<D.val?-1:0;pt(F.pdPos,px>D.vah?`價格 ${asF(px)} 在前一天價值區上方（VAH ${asF(D.vah)}）：市場接受更高的價格，偏強`:px<D.val?`價格 ${asF(px)} 在前一天價值區下方（VAL ${asF(D.val)}）：市場接受更低的價格，偏弱`:`價格在前一天價值區裡（${asF(D.val)}～${asF(D.vah)}）：盤整`)}
+    const W=B.slice(-96);let cv=0;F.cvd=W.map(b=>(cv+=b.d));F.price=W.map(b=>b.c);
+    const k4=Math.max(0,F.cvd.length-17),dC=F.cvd.at(-1)-F.cvd[k4],dP=F.price.at(-1)-F.price[k4];F.cvd4=dC;
+    pt(dC>0?0.5:-0.5,`最近 4 小時 CVD ${dC>0?'往上：主動買比較多':'往下：主動賣比較多'}`);
+    const piv=(isLow)=>{const out=[];for(let i=3;i<W.length-3;i++){let ok=true;for(let j=1;j<=3;j++){if(isLow?(W[i-j].l<=W[i].l||W[i+j].l<W[i].l):(W[i-j].h>=W[i].h||W[i+j].h>W[i].h))ok=false}if(ok)out.push(i)}return out};
+    const Lw=piv(true),Hh=piv(false);F.div=0;
+    if(Lw.length>=2){const [a,b]=Lw.slice(-2);if(W[b].l<W[a].l&&F.cvd[b]>F.cvd[a]&&b>=W.length-24){F.div=1;F.divTxt=`看漲背離：價格低點 ${asF(W[a].l)} → ${asF(W[b].l)} 創新低，CVD 卻比上次高 → 賣壓變弱`}}
+    if(!F.div&&Hh.length>=2){const [a,b]=Hh.slice(-2);if(W[b].h>W[a].h&&F.cvd[b]<F.cvd[a]&&b>=W.length-24){F.div=-1;F.divTxt=`看跌背離：價格高點 ${asF(W[a].h)} → ${asF(W[b].h)} 創新高，CVD 卻比上次低 → 買盤變弱`}}
+    if(F.div)pt(F.div,F.divTxt);F.dP4=dP}
+  if(OI.status==='fulfilled'&&F.dP4!=null){const L=OI.value.list;if(L&&L.length>4){const o0=+L[0].openInterest,o4=+L[4].openInterest,ch=(o0-o4)/o4;F.oi=o0;F.oiCh=ch;const up=F.dP4>0,oiUp=ch>0.003,oiDn=ch<-0.003;
+    const q=!oiUp&&!oiDn?[0,'未平倉量持平：沒有大量新倉進出']:up&&oiUp?[1,'價格漲＋OI 漲：新多單進場推升，趨勢比較健康']:up?[0.3,'價格漲＋OI 跌：主要是空單回補，後勁可能不足']:oiUp?[-1,'價格跌＋OI 漲：新空單進場壓價，空方主導']:[-0.3,'價格跌＋OI 跌：多單平倉／爆倉，跌完賣壓可能變小'];
+    F.oiq=q[1];pt(q[0],`${q[1]}（4 小時 OI ${ch>=0?'+':''}${(ch*100).toFixed(2)}%）`)}}
+  if(LS.status==='fulfilled'){const L=LS.value.list;if(L&&L.length){const b=+L[0].buyRatio;F.ls=b;if(b>0.6)pt(-0.5,`多空比：${(b*100).toFixed(0)}% 帳戶做多，散戶太偏多，常要反著看`);else if(b<0.4)pt(0.5,`多空比：只有 ${(b*100).toFixed(0)}% 帳戶做多，散戶太偏空，容易軋空`);else F.items.push([0,`多空比：${(b*100).toFixed(0)}% 做多、${(100-b*100).toFixed(0)}% 做空，沒有一面倒`])}}
+  if(TK.status==='fulfilled'){const t=TK.value.list&&TK.value.list[0];if(t){const fr=+t.fundingRate;F.fr=fr;F.nextF=+t.nextFundingTime;if(fr>0.0001)pt(-0.5,`資金費率 +${(fr*100).toFixed(4)}%：多單擁擠，小心多殺多`);else if(fr<-0.00005)pt(0.5,`資金費率 ${(fr*100).toFixed(4)}%：空單擁擠，容易軋空`);else F.items.push([0,`資金費率 ${(fr*100).toFixed(4)}%：正常`])}}
+  if(OB.status==='fulfilled'&&OB.value.b){const px=(+OB.value.b[0][0]+(+OB.value.a[0][0]))/2,bk=Math.max(10,Math.round(px*0.0005)),g=(arr)=>{const m=new Map();for(const [p,q] of arr){const k=Math.round(+p/bk)*bk;m.set(k,(m.get(k)||0)+(+q))}return [...m].map(([p,q])=>({p,q}))};
+    const bids=g(OB.value.b),asks=g(OB.value.a),near=x=>Math.abs(x.p-px)/px<=0.005,sb=bids.filter(near).reduce((a,x)=>a+x.q,0),sa=asks.filter(near).reduce((a,x)=>a+x.q,0);
+    F.wB=[...bids].sort((a,b)=>b.q-a.q).slice(0,3);F.wA=[...asks].sort((a,b)=>b.q-a.q).slice(0,3);F.imb=sa?sb/sa:null;
+    if(F.imb!=null){if(F.imb>1.5)pt(0.5,`盤口：現價上下 0.5% 內買單是賣單的 ${F.imb.toFixed(1)} 倍，下面接得住`);else if(F.imb<0.67)pt(-0.5,`盤口：現價上下 0.5% 內賣單${F.imb>0?'是買單的 '+(1/F.imb).toFixed(1)+' 倍':'遠多於買單'}，上面壓得重`);else F.items.push([0,'盤口：買賣掛單差不多'])}}
+  F.bias=F.score>=1.5?1:F.score<=-1.5?-1:0;FLOW=F;FL_RT.busy=false;flRender();try{drawLevels()}catch(e){}try{asRender()}catch(e){}
+}
+function flRender(){
+  const F=FLOW;if(!F||!$('flGrid'))return;
+  $('flState').innerHTML=`${F.c}・更新於 ${new Date(F.at).toLocaleTimeString('zh-TW',{hour12:false})}・每分鐘自動更新・這個分頁要開著`;
+  const col=F.bias>0?'go':F.bias<0?'bad':'';
+  $('flVerdict').innerHTML=`<div class="as-n ${col}" style="font-size:1rem"><b>訂單流解讀：${F.bias>0?'🟢 偏多':F.bias<0?'🔴 偏空':'⚪ 中性'}</b>（分數 ${F.score>=0?'+':''}${F.score.toFixed(1)}，±1.5 以上才算有方向）</div>`+
+    F.items.map(([w,t])=>`<div class="as-n" style="margin:.2rem 0">${w>0?'🟢':w<0?'🔴':'⚪'} ${t}</div>`).join('');
+  const card=(h,b)=>`<div class="as-plan" style="margin:0"><div class="as-h">${h}</div>${b}</div>`,kv=a=>`<div class="as-kv">${a.map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>`;
+  const D=F.pd;$('flGrid').innerHTML=
+    (D?card('📦 前一天價值區',kv([['最高 pdHigh',asF(D.hi)],['VAH',asF(D.vah)],['POC',asF(D.poc)],['VAL',asF(D.val)],['最低 pdLow',asF(D.lo)],['今日開盤',asF(D.open)]])):'')+
+    card('📈 CVD・背離',kv([['4 小時 CVD',F.cvd4!=null?`<span class="${F.cvd4>0?'up':'down'}">${F.cvd4>0?'買方':'賣方'}</span>`:'-'],['背離',F.div>0?'<span class="up">看漲背離</span>':F.div<0?'<span class="down">看跌背離</span>':'沒有']]))+
+    card('🧾 未平倉量 OI',kv([['現在',F.oi?asF(F.oi,0)+' 顆':'-'],['4 小時變化',F.oiCh!=null?`<span class="${F.oiCh>=0?'up':'down'}">${F.oiCh>=0?'+':''}${(F.oiCh*100).toFixed(2)}%</span>`:'-']]))+
+    card('👥 多空比・資金費率',kv([['做多帳戶',F.ls!=null?(F.ls*100).toFixed(0)+'%':'-'],['資金費率',F.fr!=null?`${(F.fr*100).toFixed(4)}%`:'-'],['下次結算',F.nextF?new Date(F.nextF).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false}):'-']]))+
+    card('🧱 盤口大單牆（Bybit）',kv([['買單牆',F.wB?F.wB.map(x=>`${asF(x.p)}（${x.q.toFixed(1)}）`).join('<br>'):'-'],['賣單牆',F.wA?F.wA.map(x=>`${asF(x.p)}（${x.q.toFixed(1)}）`).join('<br>'):'-']]));
+  if(F.cvd&&F.cvd.length>2){const ln=(a,col)=>{const mn=Math.min(...a),mx=Math.max(...a),rg=mx-mn||1;return `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${a.map((v,i)=>`${(i/(a.length-1)*300).toFixed(1)},${(66-(v-mn)/rg*62).toFixed(1)}`).join(' ')}"/>`};$('flCvd').innerHTML=ln(F.price,'#94a3b8')+ln(F.cvd,'#38bdf8')}
+}
+function flInit(){if(!$('flGrid'))return;$('flNow').onclick=()=>flRun();flRun();clearInterval(FL_RT.timer);FL_RT.timer=setInterval(flRun,60e3)}
+function tvW(id,src,cfg){const el=$(id);if(!el)return;el.innerHTML='';const w=document.createElement('div');w.className='tradingview-widget-container';w.style.height='100%';const i=document.createElement('div');i.className='tradingview-widget-container__widget';i.style.height='100%';w.appendChild(i);const sc=document.createElement('script');sc.src=src;sc.async=true;sc.type='text/javascript';sc.textContent=JSON.stringify(cfg);w.appendChild(sc);el.appendChild(w)}
+function usInit(){if(!$('usTick'))return;const th=themeNow()==='dark'?'dark':'light',B='https://s3.tradingview.com/external-embedding/';
+  tvW('usTick',B+'embed-widget-tickers.js',{symbols:[{proName:'FOREXCOM:NSXUSD',title:'納斯達克 100'},{proName:'FOREXCOM:SPXUSD',title:'標普 500'},{proName:'NASDAQ:NVDA',title:'Nvidia'},{proName:'TVC:US10Y',title:'美債 10 年殖利率'},{proName:'TVC:DXY',title:'美元指數'},{proName:'BYBIT:BTCUSDT.P',title:'BTC 合約'}],isTransparent:true,showSymbolLogo:true,colorTheme:th,locale:'zh_TW'});
+  tvW('usNews',B+'embed-widget-timeline.js',{feedMode:'all_symbols',isTransparent:true,displayMode:'regular',width:'100%',height:440,colorTheme:th,locale:'zh_TW'});
+  tvW('usCal',B+'embed-widget-events.js',{colorTheme:th,isTransparent:true,width:'100%',height:440,locale:'zh_TW',importanceFilter:'0,1',countryFilter:'us'})}
 function asInit(){
   if(!$('asCard'))return;asFill();
   $('asNow').onclick=()=>asRun(true);asBellLabel();
@@ -2685,7 +2774,7 @@ $('search').addEventListener('keydown',e=>{
 });
 
 buildLayout(); unitLabels(); applyAppearance(); fillCoinSelects(); initChart(); tick(); setInterval(tick,30000);
-document.querySelectorAll('#indBar [data-ind]').forEach(cb=>{cb.checked=C.ind[cb.dataset.ind]===undefined?['lv','liq','plan'].includes(cb.dataset.ind):!!C.ind[cb.dataset.ind];cb.onchange=()=>{C.ind[cb.dataset.ind]=cb.checked;saveC();setIndicators()}});
+document.querySelectorAll('#indBar [data-ind]').forEach(cb=>{cb.checked=C.ind[cb.dataset.ind]===undefined?['lv','liq','plan','pd'].includes(cb.dataset.ind):!!C.ind[cb.dataset.ind];cb.onchange=()=>{C.ind[cb.dataset.ind]=cb.checked;saveC();setIndicators()}});
 $('intervals').onclick=e=>{const v=e.target.dataset?.i;if(v){S.interval=v;store.set('interval',v);loadChart()}};
 $('alAdd').onclick=()=>{const p=num('alPrice');if(!(p>0))return toast('請輸入價格');S.alerts.push({c:$('alCoin').value,d:$('alDir').value,p,hit:false});store.set('alerts',S.alerts);setNum('alPrice','');renderAlerts();try{Notification.permission==='default'&&Notification.requestPermission()}catch{}};
 migratePf();
@@ -2783,7 +2872,7 @@ $('rsGo').onclick=e=>{const a=[+$('rsSpot').value,+$('rsFut').value,+$('rsGrid')
 $('wSwap').onclick=()=>{const a=$('wFrom').value;$('wFrom').value=$('wTo').value;$('wTo').value=a;renderWallet()};
 $('wFrom').onchange=renderWallet;
 $('wPct').onclick=e=>{const f=+e.target.dataset.p;if(!f)return;$('wAmt').value=Math.floor(conv(WAL[$('wFrom').value].avail()*f))};
-asInit();jInit();
+asInit();jInit();flInit();usInit();
 $('cPlan').onclick=()=>{
   const c=$('cCoin').value,p=lastP(c),en=num('cEntry'),st=num('cStop'),tg=num('cTarget'),cap=num('cCap'),rk=+$('cRisk').value;
   if(!(p&&en>0&&st>0&&st<en&&cap>0&&rk>0))return toast('先把計算機填完整（做多時停損要低於進場價）');
