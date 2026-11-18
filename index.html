@@ -742,7 +742,7 @@ const TPL={
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
         <div class="as-plan bt-box"><div class="as-h">📊 回測這套規則</div>
-          <div class="r" style="align-items:center"><select class="in" id="btDays" style="width:auto"><option value="30">過去 30 天</option><option value="60">過去 60 天</option><option value="90" selected>過去 90 天</option></select><select class="in" id="btTf" style="width:auto" title="用幾分鐘的 K 線"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="btCap" style="width:auto"><option value="1">一天最多 1 筆</option><option value="2" selected>一天最多 2 筆</option><option value="3">一天最多 3 筆</option><option value="5">一天最多 5 筆</option></select><label class="as-sync" style="margin:0"><input type="checkbox" id="btTPm"> 止盈用限價單（手續費 0.02%）</label><button class="btn sm" id="btGo">▶ 開始回測</button></div>
+          <div class="r" style="align-items:center"><select class="in" id="btDays" style="width:auto"><option value="30">過去 30 天</option><option value="60">過去 60 天</option><option value="90" selected>過去 90 天</option><option value="180">過去 180 天</option><option value="365">過去 365 天</option></select><select class="in" id="btTf" style="width:auto" title="用幾分鐘的 K 線"><option value="15">15 分 K</option><option value="60">1 小時 K</option><option value="240">4 小時 K</option></select><select class="in" id="btCap" style="width:auto"><option value="1">一天最多 1 筆</option><option value="2" selected>一天最多 2 筆</option><option value="3">一天最多 3 筆</option><option value="5">一天最多 5 筆</option></select><label class="as-sync" style="margin:0"><input type="checkbox" id="btTPm"> 止盈用限價單（手續費 0.02%）</label><button class="btn sm" id="btGo">▶ 開始回測</button></div>
           <div class="note" id="btProg" style="margin:0">用你的餘額和「每筆最多虧 %」，比較精選結構、精選＋寬止損、掃流動性</div><div id="btOut"></div></div></div>
       <div>
         <div class="lh">🧾 我的 Bybit（手動對齊，30 秒填完）</div>
@@ -2201,6 +2201,40 @@ function btSim(B,AA,v,bal0,riskPct,maker,taker,cap=2,tpM=false){
   const W=T.filter(t=>t.pnl>0),L=T.filter(t=>t.pnl<=0),sw=W.reduce((a,t)=>a+t.pnl,0),sl=L.reduce((a,t)=>a+t.pnl,0);
   return{T,eq,ret:Math.max(-1,(eq-bal0)/bal0),n:T.length,win:T.length?W.length/T.length:0,pf:sl?Math.abs(sw/sl):null,avgR:T.length?T.reduce((a,t)=>a+t.r,0)/T.length:0,mdd:Math.min(1,mdd),fees,curve,dead};
 }
+/* ---------- 系統化策略（趨勢跟隨／均值回歸）：讓賺的單跑、虧的單小 ---------- */
+const BT_S=[{n:'通道突破',k:'don',col:'#ef4444'},{n:'均線趨勢',k:'ema',col:'#14b8a6'},{n:'RSI 回歸',k:'rsi',col:'#eab308'}];
+function btInd(B){
+  const n=B.length,c=B.map(b=>b.c),atr=new Array(n).fill(null),e20=[],e50=[],s200=new Array(n).fill(null),s5=new Array(n).fill(null),rsi=new Array(n).fill(null),hh20=new Array(n).fill(null),ll20=new Array(n).fill(null),hh10=new Array(n).fill(null),ll10=new Array(n).fill(null);
+  let a=0;for(let i=1;i<n;i++){const tr=Math.max(B[i].h-B[i].l,Math.abs(B[i].h-c[i-1]),Math.abs(B[i].l-c[i-1]));a=i<=14?a+tr/14:a+(tr-a)/14;if(i>=14)atr[i]=a}
+  const k20=2/21,k50=2/51;for(let i=0;i<n;i++){e20[i]=i?e20[i-1]+(c[i]-e20[i-1])*k20:c[i];e50[i]=i?e50[i-1]+(c[i]-e50[i-1])*k50:c[i]}
+  let sA=0,sB=0;for(let i=0;i<n;i++){sA+=c[i];if(i>=200)sA-=c[i-200];if(i>=199)s200[i]=sA/200;sB+=c[i];if(i>=5)sB-=c[i-5];if(i>=4)s5[i]=sB/5}
+  let ag=0,al=0;for(let i=1;i<n;i++){const d=c[i]-c[i-1],g=Math.max(d,0),l=Math.max(-d,0);if(i<=2){ag+=g/2;al+=l/2}else{ag=(ag+g)/2;al=(al+l)/2}if(i>=2)rsi[i]=al===0?100:100-100/(1+ag/al)}
+  for(let i=20;i<n;i++){let h=-Infinity,l=Infinity;for(let j=i-20;j<i;j++){h=Math.max(h,B[j].h);l=Math.min(l,B[j].l)}hh20[i]=h;ll20[i]=l;h=-Infinity;l=Infinity;for(let j=i-10;j<i;j++){h=Math.max(h,B[j].h);l=Math.min(l,B[j].l)}hh10[i]=h;ll10[i]=l}
+  return {atr,e20,e50,s200,s5,rsi,hh20,ll20,hh10,ll10};
+}
+function btSys(B,I,kind,from,to,bal0,riskPct,maker,taker,cap=2){
+  let eq=bal0,pos=null,pend=null,exitNext=false,peak=bal0,mdd=0,fees=0,day='',dayN=0,dead=false;const T=[],curve=[],st=asStep('BTC');
+  const dk=t=>new Date(t+8*36e5).toISOString().slice(0,10);
+  const close=(i,x,why)=>{const f=x*pos.q*taker,g=(x-pos.e)*pos.dir*pos.q;eq+=g-f;fees+=f;T.push({t:B[pos.i].t,t2:B[i].t,dir:pos.dir,e:pos.e,x,why,pnl:g-f-pos.f,r:(g-f-pos.f)/(pos.R*pos.q)});pos=null;if(eq<bal0*0.05)dead=true};
+  for(let i=from;i<to;i++){const b=B[i];
+    if(pos&&exitNext){close(i,b.o,'出場訊號');exitNext=false}
+    if(!pos&&pend&&!dead){const px=b.o,R=Math.abs(px-pend.stop);if(R>0&&(pend.dir>0?pend.stop<px:pend.stop>px)){let q=Math.floor(eq*riskPct/100/(R+px*taker*2)/st.step+1e-9)*st.step;if(q<st.min)q=st.min;const f=px*q*taker;eq-=f;fees+=f;pos={i,e:px,dir:pend.dir,stop:pend.stop,q,R,f,ext:px};const d=dk(b.t);if(d!==day){day=d;dayN=0}dayN++}pend=null}
+    if(pos){const d=pos.dir;if(d>0?b.l<=pos.stop:b.h>=pos.stop){close(i,d>0?Math.min(pos.stop,b.o):Math.max(pos.stop,b.o),(d>0?pos.stop>pos.e:pos.stop<pos.e)?'移動止損（賺）':'止損')}}
+    const A=I.atr[i];
+    if(pos&&A){const d=pos.dir;pos.ext=d>0?Math.max(pos.ext,b.c):Math.min(pos.ext,b.c);
+      if(kind==='don'){const t=d>0?I.ll10[i+1<B.length?i+1:i]:I.hh10[i+1<B.length?i+1:i];if(t!=null)pos.stop=d>0?Math.max(pos.stop,t):Math.min(pos.stop,t)}
+      if(kind==='ema'){const t=pos.ext-d*3*A;pos.stop=d>0?Math.max(pos.stop,t):Math.min(pos.stop,t);if(d>0?I.e20[i]<I.e50[i]:I.e20[i]>I.e50[i])exitNext=true}
+      if(kind==='rsi'&&I.s5[i]!=null&&(d>0?b.c>I.s5[i]:b.c<I.s5[i]))exitNext=true}
+    if(!pos&&!pend&&!dead&&A&&i+1<to&&(dk(b.t)!==day||dayN<cap)){let dir=0,stop=0;
+      if(kind==='don'&&I.hh20[i]!=null){if(b.c>I.hh20[i])dir=1;else if(b.c<I.ll20[i])dir=-1;stop=b.c-dir*2*A}
+      if(kind==='ema'&&i>0){if(I.e20[i]>I.e50[i]&&I.e20[i-1]<=I.e50[i-1])dir=1;else if(I.e20[i]<I.e50[i]&&I.e20[i-1]>=I.e50[i-1])dir=-1;stop=b.c-dir*3*A}
+      if(kind==='rsi'&&I.s200[i]!=null&&I.rsi[i]!=null){if(b.c>I.s200[i]&&I.rsi[i]<10)dir=1;else if(b.c<I.s200[i]&&I.rsi[i]>90)dir=-1;stop=b.c-dir*2.5*A}
+      if(dir)pend={dir,stop}}
+    const val=eq+(pos?(b.c-pos.e)*pos.dir*pos.q:0);peak=Math.max(peak,val);mdd=Math.max(mdd,(peak-val)/peak);if(i%4===0)curve.push(val)}
+  if(pos)close(to-1,B[to-1].c,'回測結束');
+  const W=T.filter(t=>t.pnl>0),L=T.filter(t=>t.pnl<=0),sw=W.reduce((a,t)=>a+t.pnl,0),sl=L.reduce((a,t)=>a+t.pnl,0);
+  return{T,eq,ret:Math.max(-1,(eq-bal0)/bal0),n:T.length,win:T.length?W.length/T.length:0,pf:sl?Math.abs(sw/sl):null,avgR:T.length?T.reduce((a,t)=>a+t.r,0)/T.length:0,mdd:Math.min(1,mdd),fees,curve,dead};
+}
 async function btRun(){
   if(BT.run)return;BT.run=true;$('btGo').disabled=true;const days=+$('btDays').value,tf=+$('btTf').value||15,cap=+$('btCap').value||2,tpM=$('btTPm').checked,c=AS.coin||'BTC',bal=+AS.bal>0?+AS.bal:100,rk=+AS.risk||3;
   try{const {B,src}=await btFetch(c,days,tf);const W=300,AA=new Array(B.length);
@@ -2208,6 +2242,7 @@ async function btRun(){
       if(i%250===0){$('btProg').textContent=`分析 K 線… ${Math.round((i-W)/(B.length-W)*100)}%`;await new Promise(r=>setTimeout(r,0))}}
     const Bs=B.slice(W),As=AA.slice(W),k=Math.floor(Bs.length*2/3),F=[0.0002,0.00055];
     const G=[...F,cap,tpM],runs=BT_V.map(v=>({v,all:btSim(Bs,As,v,bal,rk,...G),a:btSim(Bs.slice(0,k),As.slice(0,k),v,bal,rk,...G),b:btSim(Bs.slice(k),As.slice(k),v,bal,rk,...G)}));
+    const I=btInd(B);for(const v of BT_S)runs.push({v,all:btSys(B,I,v.k,W,B.length,bal,rk,...F,cap),a:btSys(B,I,v.k,W,W+k,bal,rk,...F,cap),b:btSys(B,I,v.k,W+k,B.length,bal,rk,...F,cap)});
     const hold=(Bs.at(-1).c-Bs[0].o)/Bs[0].o;
     BT.res={runs,hold,days,tf,cap,tpM,src,from:Bs[0].t,to:Bs.at(-1).t,mid:Bs[k].t,bal,rk,c};btRender()}
   catch(e){$('btProg').innerHTML=`<span class="down">${e.message||e}</span>`}
@@ -2232,7 +2267,7 @@ function btRender(){
     <label class="as-sync"><input type="checkbox" id="btStrict" ${AS.strict!==false?'checked':''}> 看盤助手用「精選模式」（只給新訊號、均線同向、風報比 ≥ 1:2、一天最多 2 筆）</label>
     <label class="as-sync"><input type="checkbox" id="btWide" ${AS.wide?'checked':''}> 看盤助手用「寬止損」（至少 1 ATR、放在 Order Block 外）</label>
     <details class="learn" style="margin-top:.5rem"><summary>最近 15 筆（${best.v.n}）</summary>${best.all.T.slice(-15).reverse().map(t=>`<div>${new Date(t.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}・${t.dir>0?'多':'空'} ${asF(t.e)} → ${asF(t.x)}・${t.why}・<b class="${cls(t.pnl)}">${t.pnl>=0?'+':''}${asF(t.pnl,2)}</b>（${t.r>=0?'+':''}${t.r.toFixed(2)}R）</div>`).join('')||'沒有交易'}</details>
-    <details class="learn"><summary>回測怎麼算的</summary><div>每根 15 分 K 收盤後，只用「到這根為止」的 300 根 K 線跑一次助手分析（不偷看未來）。「在進場區」就下一根開盤市價進場；「等回踩」就掛限價 2 小時，收盤破止損就取消；「已跑遠」不追。同一根 K 同時碰到止損和止盈，一律當作先碰止損。賺到 1 倍止損距離就移到保本。精選結構要求：訊號 1 小時內、均線同向、風報比 ≥ 1:2。掃流動性：刺破前低／前高後 15 分 K 收回來就進場，目標是至少 2 倍止損距離的最近高低點。所有方法都是同一個訊號只做一次、一天最多 ${R.cap} 筆。前段／後段是把期間切成 2/3 和 1/3 分開跑，兩段都賺才比較可信。手續費：限價 0.02%、市價 0.055%，沒算資金費和滑價。帳戶剩不到 5% 就停止（💥）。</div></details>`;
+    <details class="learn"><summary>回測怎麼算的</summary><div>每根 15 分 K 收盤後，只用「到這根為止」的 300 根 K 線跑一次助手分析（不偷看未來）。「在進場區」就下一根開盤市價進場；「等回踩」就掛限價 2 小時，收盤破止損就取消；「已跑遠」不追。同一根 K 同時碰到止損和止盈，一律當作先碰止損。賺到 1 倍止損距離就移到保本。精選結構要求：訊號 1 小時內、均線同向、風報比 ≥ 1:2。掃流動性：刺破前低／前高後 15 分 K 收回來就進場，目標是至少 2 倍止損距離的最近高低點。所有方法都是同一個訊號只做一次、一天最多 ${R.cap} 筆。前段／後段是把期間切成 2/3 和 1/3 分開跑，兩段都賺才比較可信。手續費：限價 0.02%、市價 0.055%，沒算資金費和滑價。帳戶剩不到 5% 就停止（💥）。<br><br><b>系統化策略</b>（後三欄，不用看盤助手的訊號）：K 線收盤出訊號，下一根開盤市價進場，全部用吃單手續費。<b>通道突破</b>：收盤突破前 20 根最高點做多（跌破最低點做空），止損 2 ATR，之後用前 10 根最低（最高）點當移動止損。<b>均線趨勢</b>：EMA20 上穿 EMA50 做多（下穿做空），止損 3 ATR，從最有利的收盤價回落 3 ATR 或均線反向就出場。<b>RSI 回歸</b>：價格在 200 均線上、RSI(2) 低於 10 做多（反之做空），收盤回到 5 均線上方就出場，止損 2.5 ATR。前兩個是趨勢跟隨：勝率低，但賺的單可以一直跑。</div></details>`;
   $('btStrict').onchange=e=>{AS.strict=e.target.checked;asSave();AS_RT.sig=null;asRun(true);toast(AS.strict?'看盤助手改用精選模式':'看盤助手改回原始規則')};
   $('btWide').onchange=e=>{AS.wide=e.target.checked;asSave();AS_RT.sig=null;asRun(true);toast(AS.wide?'看盤助手改用寬止損':'看盤助手改回原本的止損')};
 }
