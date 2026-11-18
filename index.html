@@ -737,7 +737,7 @@ const TPL={
       <div class="lh" style="margin-top:1rem">已結束</div><div class="list" id="gdHist"></div>
     </div></div>`,
   assist:()=>`<div class="mh"><div><h3>📡 看盤助手・每 15 分鐘自動分析</h3><div class="sub">用 15 分 K 自動找結構、choch、Order Block、FVG，算好進場／止損／止盈和單量。是規則，不是預測・優先用 Bybit 合約的價格</div></div>
-      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
+      <div class="r" style="align-items:center;gap:.5rem"><select class="in" id="asMethod" style="width:auto" title="分析方法"><option value="smc">方法：精選結構</option><option value="sweep">方法：掃流動性（ICT）</option></select><select class="in" id="asCoin" style="width:auto"><option>BTC</option><option>ETH</option><option>SOL</option></select><button class="btn ghost sm" id="asBell" title="精選出現可以做的單時，跳通知＋響一聲">🔔 進場提醒：關</button><button class="btn sm" id="asNow">⟳ 立即分析</button></div></div>
     <div class="as-st" id="asState">準備中…</div>
     <div class="as-grid">
       <div><div id="asCard" class="as-card">讀取中…</div><div id="asPos"></div>
@@ -1933,6 +1933,19 @@ function jInit(){
 const AS_DEF={bal:0,risk:3,lev:10,side:'',qty:0,entry:0,sl:0,tp:0,r0:0,maker:false,sync:true,coin:'BTC'};
 const AS=Object.assign({},AS_DEF,store.get('assist',{}));
 const AS_RT={res:null,next:0,timer:null,err:null,busy:false,log:store.get('assistLog',[]),sig:null};
+let AS_AC=null,AS_TT=null;
+function asBeep(){try{if(!AS_AC)return;const t=AS_AC.currentTime;[0,.25,.5].forEach((d,i)=>{const o=AS_AC.createOscillator(),g=AS_AC.createGain();o.frequency.value=i===2?1175:880;o.connect(g);g.connect(AS_AC.destination);g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.25,t+d+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d+.2);o.start(t+d);o.stop(t+d+.22)})}catch(e){}}
+function asBellLabel(){const b=$('asBell');if(!b)return;const den=typeof Notification!=='undefined'&&Notification.permission==='denied';b.textContent=AS.notify?(den?'🔔 進場提醒：開（只有聲音）':'🔔 進場提醒：開'):'🔕 進場提醒：關';b.classList.toggle('ghost',!AS.notify)}
+function asNotify(A,P){
+  if(!AS.notify||!P.dir||P.skip)return;
+  const k=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',Math.round(P.sl)].join('|'),last=store.get('assistNotified',{k:'',t:0});
+  if(last.k===k&&Date.now()-last.t<6*3600e3)return;store.set('assistNotified',{k,t:Date.now()});
+  const side=P.dir>0?'做多':'做空',body=`${A.c} ${side}・${P.state}\n進場 ${asF(P.entry)}・止損 ${asF(P.sl)}・止盈 ${asF(P.tp)}・風報比 1:${(P.rr||0).toFixed(1)}`;
+  try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification('🐱 盯盤喵：精選有單了（'+side+'）',{body,tag:'assist',requireInteraction:true});n.onclick=()=>{window.focus();$('asCard')&&$('asCard').scrollIntoView({block:'start'});n.close()}}}catch(e){}
+  asBeep();toast(`🔔 <b>精選有單了：${side}</b><br>${body.replace('\n','<br>')}`);
+  clearInterval(AS_TT);const t0=document.title;let on=0;AS_TT=setInterval(()=>{document.title=(on^=1)?'🔔 有單！'+side:t0},1000);
+  const stop=()=>{clearInterval(AS_TT);document.title=t0;window.removeEventListener('focus',stop)};window.addEventListener('focus',stop);if(document.hasFocus())setTimeout(stop,8000);
+}
 const asSave=()=>store.set('assist',AS);
 const asF=(n,d=1)=>n==null||!isFinite(n)?'-':(+n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const asStep=c=>{const d=FSPEC[c];return d?{min:d[0],step:d[1],tick:d[2]}:{min:0.001,step:0.001,tick:0.1}};
@@ -2182,7 +2195,7 @@ async function asRun(manual){
     const closed=B.filter(b=>b.ct<Date.now());const A=asAnalyze(closed,c);A.px=live.c;
     const P=asPlanLive(A),M=asManage(A,P);AS_RT.res={A,P,M,at:Date.now()};AS_RT.err=null;
     const sig=[P.dir,A.ev?A.ev.i+'|'+A.ev.t:'',P.state].join('|'),sigKey=[P.dir,A.ev?A.ev.type+A.ev.dir+Math.round(A.ev.level):'',P.state].join('|');
-    if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
+    asNotify(A,P);if(sigKey!==AS_RT.sig){AS_RT.sig=sigKey;AS_RT.log.unshift({t:Date.now(),c,px:A.px,bias:P.bias,state:P.state,e:P.entry,sl:P.sl,tp:P.tp});AS_RT.log=AS_RT.log.slice(0,30);store.set('assistLog',AS_RT.log)}
   }catch(e){AS_RT.err='讀不到資料（'+(e.message||'網路')+'），1 分鐘後重試'}
   AS_RT.busy=false;asRender();asSchedule(AS_RT.err?60e3:null);
 }
@@ -2219,7 +2232,13 @@ function asFill(){
 }
 function asInit(){
   if(!$('asCard'))return;asFill();
-  $('asNow').onclick=()=>asRun(true);$('asMethod').onchange=e=>{AS.method=e.target.value;asSave();AS_RT.sig=null;asRun(true)};$('btGo').onclick=btRun;
+  $('asNow').onclick=()=>asRun(true);asBellLabel();
+  const wake=()=>{if(AS.notify&&!AS_AC){try{AS_AC=new (window.AudioContext||window.webkitAudioContext)();AS_AC.resume()}catch(e){}}};window.addEventListener('pointerdown',wake,{once:true});window.addEventListener('keydown',wake,{once:true});
+  $('asBell').onclick=async()=>{AS.notify=!AS.notify;
+    if(AS.notify){try{AS_AC=AS_AC||new (window.AudioContext||window.webkitAudioContext)();await AS_AC.resume()}catch(e){}
+      if(typeof Notification!=='undefined'&&Notification.permission==='default'){try{await Notification.requestPermission()}catch(e){}}
+      asBeep();toast(Notification&&Notification.permission==='granted'?'🔔 已開啟：精選出現可以做的單會跳通知＋響一聲。<br><span style="color:var(--muted)">這個分頁要開著、電腦不能睡眠</span>':'🔔 已開啟聲音提醒。瀏覽器通知被擋住了，可以到網址列左邊的鎖頭把「通知」改成允許')}
+    asSave();asBellLabel()};$('asMethod').onchange=e=>{AS.method=e.target.value;asSave();AS_RT.sig=null;asRun(true)};$('btGo').onclick=btRun;
   $('asCoin').onchange=e=>{AS.coin=e.target.value;asSave();AS_RT.sig=null;asRun(true)};
   $('asSave').onclick=()=>{
     AS.bal=+$('asBal').value||0;AS.risk=Math.min(10,Math.max(.5,+$('asRisk').value||3));AS.lev=+$('asLev').value||10;AS.side=$('asSide').value;
